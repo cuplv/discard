@@ -2,7 +2,7 @@ module Main where
 
 import System.Exit
 
-import Data.EdgeSet
+import Data.EventGraph.SetEG
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -25,10 +25,10 @@ main = do
                then return ()
                else die $ show a ++ "\n  did not equal\n" ++ show b ++ "."
 
-es1 = EdgeSet (Set.fromList 
-  [Effect 3 (EdgeSet (Set.fromList 
-    [Effect 2 (EdgeSet (Set.fromList 
-      [Effect 1 emptyEdgeSet]))]))])
+es1 = SetEG (Set.fromList 
+  [SetEff 3 (SetEG (Set.fromList 
+    [SetEff 2 (SetEG (Set.fromList 
+      [SetEff 1 emptySetEG]))]))])
 
 e11 = 3 <: 2 <: eff 1
 
@@ -38,10 +38,10 @@ e12 = [2 <: eff 1, 3 <: eff 1]
 
 e13 = [3 <: 2 <: eff 1, 3 <: eff 1]
 
-es2 = EdgeSet (Set.fromList
-  [Effect 3 (EdgeSet (Set.fromList
-    [Effect 98 emptyEdgeSet
-    ,Effect 99 emptyEdgeSet]))])
+es2 = SetEG (Set.fromList
+  [SetEff 3 (SetEG (Set.fromList
+    [SetEff 98 emptySetEG
+    ,SetEff 99 emptySetEG]))])
 
 e21 = 3 <: [eff 98, eff 99]
 
