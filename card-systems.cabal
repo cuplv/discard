@@ -12,15 +12,14 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Data.EventGraph
                      , Data.EventGraph.SetEG
-  build-depends:       base >=4.10 && <4.11, containers
+                     , Replica
+  build-depends:       base >=4.10 && <4.11, containers, mtl
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
 executable cardr
   main-is:             Main.hs
   build-depends:       base >=4.10 && <4.11
-                     , containers
-                     , card-systems
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 

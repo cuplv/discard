@@ -3,8 +3,11 @@
 
 module Data.EventGraph.SetEG where
 
+import Control.Monad.Identity
 import Data.Set (Set)
 import qualified Data.Set as Set
+
+import Data.EventGraph
 
 data SetEG e = SetEG (Set (SetEff e)) deriving (Eq, Ord)
 
@@ -16,12 +19,25 @@ instance (Show e) => Show (SetEff e) where
 instance (Show e) => Show (SetEG e) where
   show (SetEG es) = "{ " ++ concat (map ((++ ", ") . show) (Set.toList es)) ++ " }"
 
+instance EventGraph SetEG where
+  type Resolver SetEG = Identity
+  empty = emptySetEG
+  add e = return . syncAdd e
+  merge g1 g2 = return $ mergeSetEG g1 g2
+  edge (SetEG es) = return . map (\(SetEff e g) -> (e,g)) . Set.toList $ es
+
 emptySetEG :: (Ord e) => SetEG e
 emptySetEG = SetEG mempty
 
 emit :: (Ord e) => SetEff e -> SetEG e -> SetEG e
 emit ef@(SetEff e es1) (SetEG s2) = 
   SetEG (ef `Set.insert` Set.filter (not . seen es1) s2)
+
+mergeSetEG :: (Ord e) => SetEG e -> SetEG e -> SetEG e
+mergeSetEG eg1@(SetEG s1) eg2@(SetEG s2) = SetEG $
+  Set.union 
+    (Set.filter (not.seen eg2) s1)
+    (Set.filter (not.seen eg1) s2)
 
 syncAdd :: (Ord e) => e -> SetEG e -> SetEG e
 syncAdd e es = SetEG (Set.singleton $ SetEff e es)
@@ -69,4 +85,3 @@ tes = toSetEG
 
 infixr <:
 infixr <#
-
