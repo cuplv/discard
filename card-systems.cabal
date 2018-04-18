@@ -19,7 +19,7 @@ library
 
 executable cardr
   main-is:             Main.hs
-  build-depends:       base >=4.10 && <4.11
+  build-depends:       base >=4.10 && <4.11, card-systems, mtl, stm
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 
