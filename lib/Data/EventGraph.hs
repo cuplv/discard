@@ -5,6 +5,9 @@ module Data.EventGraph where
 
 import Control.Monad (foldM)
 
+-- class EGStore s where
+--   type EGStore
+
 class Monoid e => Effect e where
   type Store e
   eval :: [e] -> Store e
@@ -30,6 +33,8 @@ class (Monad (Resolver s)) => EventGraph s where
 
 toList :: (EventGraph g, Ord e) => g e -> Resolver g [e]
 toList g = do es <- edge g
-              g' <- foldM merge empty (map snd es)
-              es' <- toList g'
-              return $ es' ++ (map fst es)
+              case es of
+                [] -> return []
+                _ -> do g' <- foldM merge empty (map snd es)
+                        es' <- toList g'
+                        return $ es' ++ (map fst es)

@@ -20,7 +20,7 @@ instance (Show e) => Show (SetEG e) where
   show (SetEG es) = "{ " ++ concat (map ((++ ", ") . show) (Set.toList es)) ++ " }"
 
 instance EventGraph SetEG where
-  type Resolver SetEG = Identity
+  type Resolver SetEG = IO
   empty = emptySetEG
   add e = return . syncAdd e
   merge g1 g2 = return $ mergeSetEG g1 g2

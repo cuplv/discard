@@ -1,10 +1,15 @@
 module Main where
 
 import System.Exit
+import Control.Monad (foldM)
 
+import Data.EventGraph
 import Data.EventGraph.SetEG
 import Data.Set (Set)
 import qualified Data.Set as Set
+
+mks :: (Ord a) => [a] -> Set a
+mks = Set.fromList
 
 main :: IO ()
 main = do
@@ -17,6 +22,16 @@ main = do
       es234 = [ 2 <# 1, 3 <# 1, eff 4 ]
       es434 = [ 4<:3<:2<#1, 3<#1, eff 4 ]
   emit a4321 (tes es234) === tes es434
+  -- l <- toList e3
+  -- l === [1,2,98,99,3,3]
+  ee3 <- edge e3
+  Set.fromList ee3 === Set.fromList [(3,tes [2 <# 1])
+                                    ,(3,tes [eff 98,eff 99])]
+  merge (tes [2 <# 1]) (tes [eff 98,eff 99]) =*= pure (tes [2<#1,eff 98,eff 99])
+  (mks <$> edge (tes [2<#1,eff 98, eff 99])) =*= pure (mks [(2,tes $ eff 1)
+                                                           ,(98,empty)
+                                                           ,(99,empty)])
+  foldM merge empty [tes $ eff 1,empty,empty] =*= pure (tes $ eff 1)
   return ()
 
 
@@ -24,6 +39,11 @@ main = do
 (===) a b = if a == b
                then return ()
                else die $ show a ++ "\n  did not equal\n" ++ show b ++ "."
+
+(=*=) :: (Show a, Eq a) => IO a -> IO a -> IO ()
+(=*=) a b = do ioa <- a
+               iob <- b
+               ioa === iob
 
 es1 = SetEG (Set.fromList 
   [SetEff 3 (SetEG (Set.fromList 
@@ -48,5 +68,3 @@ e21 = 3 <: [eff 98, eff 99]
 e22 = 3 <: [eff 98, eff 99, eff 99]
      
 e3 = tes [3 <: [2 <: eff 1], 3 <: [eff 98, eff 99]]
-
-
