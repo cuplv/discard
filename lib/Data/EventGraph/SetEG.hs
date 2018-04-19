@@ -36,14 +36,18 @@ emit ef@(SetEff e es1) (SetEG s2) =
 mergeSetEG :: (Ord e) => SetEG e -> SetEG e -> SetEG e
 mergeSetEG eg1@(SetEG s1) eg2@(SetEG s2) = SetEG $
   Set.union 
-    (Set.filter (not.seen eg2) s1)
-    (Set.filter (not.seen eg1) s2)
+    (Set.filter (not.seen' eg2) s1)
+    (Set.filter (not.seen' eg1) s2)
 
 syncAdd :: (Ord e) => e -> SetEG e -> SetEG e
 syncAdd e es = SetEG (Set.singleton $ SetEff e es)
 
 bareSetEff :: (Ord e) => e -> SetEff e
 bareSetEff e = SetEff e emptySetEG
+
+seen' :: (Ord e) => SetEG e -> SetEff e -> Bool
+seen' (SetEG s) e =
+  or . Set.toList . Set.map (\(SetEff _ es) -> seen es e) $ s
 
 seen :: (Ord e) => SetEG e -> SetEff e -> Bool
 seen (SetEG s) e = 

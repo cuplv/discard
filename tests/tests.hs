@@ -32,6 +32,8 @@ main = do
                                                            ,(98,empty)
                                                            ,(99,empty)])
   foldM merge empty [tes $ eff 1,empty,empty] =*= pure (tes $ eff 1)
+  toList (tes [3<#1, 2<#1]) =*= pure [1,2,3]
+  toList (tes (eff 1)) =*= pure [1]
   return ()
 
 
