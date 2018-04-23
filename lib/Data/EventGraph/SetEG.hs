@@ -1,5 +1,7 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Data.EventGraph.SetEG where
 
@@ -19,15 +21,23 @@ instance (Show e) => Show (SetEff e) where
 instance (Show e) => Show (SetEG e) where
   show (SetEG es) = "{ " ++ concat (map ((++ ", ") . show) (Set.toList es)) ++ " }"
 
-instance EventGraph SetEG where
-  type Resolver SetEG = IO
-  empty = emptySetEG
-  add e = return . syncAdd e
-  merge g1 g2 = return $ mergeSetEG g1 g2
-  edge (SetEG es) = return . map (\(SetEff e g) -> (e,g)) . Set.toList $ es
+------------------------------------------------------------------------
 
 emptySetEG :: (Ord e) => SetEG e
 emptySetEG = SetEG mempty
+
+instance EventGraph SetEG where
+  empty = emptySetEG
+
+-- Any monad can host a SetEG
+instance (Monad m) => EGMonad m SetEG where
+  add e = return . syncAdd e
+  merge g1 g2 = return $ mergeSetEG g1 g2
+  edge (SetEG es) = 
+    return 
+    . map (\(SetEff e g) -> (e,g)) 
+    . Set.toList 
+    $ es
 
 emit :: (Ord e) => SetEff e -> SetEG e -> SetEG e
 emit ef@(SetEff e es1) (SetEG s2) = 
