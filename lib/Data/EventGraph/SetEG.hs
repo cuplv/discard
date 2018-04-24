@@ -26,11 +26,11 @@ instance (Show e) => Show (SetEG e) where
 emptySetEG :: (Ord e) => SetEG e
 emptySetEG = SetEG mempty
 
-instance EventGraph SetEG where
+instance (Ord e) => EG SetEG e where
   empty = emptySetEG
 
--- Any monad can host a SetEG
-instance (Monad m) => EGMonad m SetEG where
+-- Any monad can host a SetEG, and any event with Ord can be stored
+instance (Monad m, Ord e) => EGMonad SetEG e m where
   add e = return . syncAdd e
   merge g1 g2 = return $ mergeSetEG g1 g2
   edge (SetEG es) = 

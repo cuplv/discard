@@ -1,39 +1,32 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE FlexibleContexts #-}
 
 module Data.EventGraph where
 
 import Control.Monad (foldM)
+import Data.Foldable (foldl')
 
-class EventGraph (g :: * -> *) where
-  empty :: (Ord e) => g e
+class EG g e where
+  -- | Instantiate an empty event graph 'g' for some type 'e' of
+  -- events.
+  empty :: g e
 
-class (EventGraph g, Monad m) => EGMonad m g where
-  add :: (Ord e) => e -> g e -> m (g e)
-  merge :: (Ord e) => g e -> g e -> m (g e)
-  edge :: (Ord e) => g e -> m [(e, g e)]
+class (Monad m, EG g e) => EGMonad g e m where
+  -- | Add an event to the event graph
+  add :: e -> g e -> m (g e)
+  -- | Merge two event graphs, which may share events.
+  merge :: g e -> g e -> m (g e)
+  -- | Examine the "edge set" of the event graph.  The edge set is the
+  -- set of events which do not come before any other event in the
+  -- graph.
+  --
+  -- 'edge' is used to recursively unpack and evaluate the history of
+  -- events stored in an event graph.
+  edge :: g e -> m [(e, g e)]
 
--- -- | An 'EventGraph' is a DAG of events.
--- class (Monad (Resolver s)) => EventGraph s where
---   -- | 'EventGraph' instances intended for heavy use may use IO; any
---   -- necessary monadic actions can be encapsulated by the 'Resolver'.
---   type Resolver s :: * -> *
---   -- | Instantiate an empty 'EventGraph' for some type 'e' of events.
---   empty :: (Ord e) => s e
---   -- | Add an event of type 'e' to the 'EventGraph'
---   add :: (Ord e) => e -> s e -> Resolver s (s e)
---   -- | Merge two 'EventGraph's, which may share events.
---   merge :: (Ord e) => s e -> s e -> Resolver s (s e)
---   -- | Examine the "edge-set" of the 'EventGraph'.  The edge-set is
---   -- the set of events which do not come before any other event in the
---   -- graph.
---   --
---   -- 'edge' is used to recursively unpack and evaluate the history of
---   -- events stored in an 'EventGraph'.
---   edge :: (Ord e) => s e -> Resolver s [(e, s e)]
+foldg :: (EGMonad g e m) => (s -> e -> s) -> s -> g e -> m s
+foldg f s g = foldl' f s <$> toList g
 
-toList :: (Ord e, EventGraph g, EGMonad m g) => g e -> m [e]
+toList :: (EGMonad g e m) => g e -> m [e]
 toList g = do es <- edge g
               case es of
                 [] -> return []
