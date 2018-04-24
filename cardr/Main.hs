@@ -9,7 +9,9 @@ import Control.Concurrent.STM
 
 import Data.EventGraph
 import Data.EventGraph.SetEG
-import Replica
+import Data.Effect
+import Data.Effect.Common
+import ConflictFree
 
 main = test2Replicas
 
@@ -45,20 +47,20 @@ testBroadcast =
      threadDelay (ms 4)
      return ()
 
-data Counter = Add Int | Sub Int deriving (Show,Eq,Ord)
+-- data Counter = Add Int | Sub Int deriving (Show,Eq,Ord)
 
-instance Monoid Counter where
-  mempty = Add 0
-  mappend (Add n1) (Add n2) = Add (n1 + n2)
-  mappend (Add n1) (Sub n2) = Add (n1 - n2)
-  mappend (Sub n1) (Add n2) = Sub (n1 - n2)
-  mappend (Sub n1) (Sub n2) = Sub (n1 + n2)
+-- instance Monoid Counter where
+--   mempty = Add 0
+--   mappend (Add n1) (Add n2) = Add (n1 + n2)
+--   mappend (Add n1) (Sub n2) = Add (n1 - n2)
+--   mappend (Sub n1) (Add n2) = Sub (n1 - n2)
+--   mappend (Sub n1) (Sub n2) = Sub (n1 + n2)
 
-instance Effect Counter where
-  type Store Counter = Int
-  eval [] = 0
-  eval ((Add n):es) = n + (eval es)
-  eval ((Sub n):es) = (-n) + (eval es)
+-- instance Effect Counter where
+--   type Store Counter = Int
+--   eval [] = 0
+--   eval ((Add n):es) = n + (eval es)
+--   eval ((Sub n):es) = (-n) + (eval es)
 
 data Broadcast g e = Broadcast String (g e)
 
@@ -84,29 +86,30 @@ data RepIn g e a = RepIn
 write :: (MonadIO m) => TChan a -> a -> m ()
 write c = liftIO . atomically . writeTChan c
 
-handleComm :: (EventGraph g, MonadIO (Resolver g), Show (g e), Ord e, Effect e, Show a)
+handleComm :: (EGMonad g e m, Effect e, MonadIO m, Show (g e), Show a)
            => RepOut g e a
            -> Command g e a -- ^ Command to be handled
-           -> RepS g e ()
+           -> StoreT g e m ()
 handleComm (RepOut name brc retc dbgc) comm = 
   case comm of
     Deliver (Broadcast _ g) -> do
       -- liftIO $ putStrLn "Handling delivery..."
-      deliverM g
+      deliver g
       write dbgc $ name ++ ": Delivered " ++ show g
     Execute o -> do
       -- liftIO $ putStrLn "Handling invocation..."
-      (g',a) <- invokeM o
+      a <- invoke o
+      g' <- history
       -- liftIO $ putStrLn "Executed invocation."
       write dbgc $ name ++ ": Stepped to " ++ show g'
       write dbgc $ name ++ ": Returned " ++ show a
       write brc (Broadcast name g')
       write retc a
 
-loopReplica :: (EventGraph g, MonadIO (Resolver g), Show (g e), Ord e, Effect e, Show a)
+loopReplica :: (EGMonad g e m, Effect e, MonadIO m, Show (g e), Show a)
             => RepIn g e a
             -> RepOut g e a
-            -> RepS g e ()
+            -> StoreT g e m ()
 loopReplica inc@(RepIn commc) outc = do
   -- liftIO $ putStrLn ("Running a loop...")
   comm <- liftIO . atomically . readTChan $ commc
@@ -132,11 +135,11 @@ consume f i = do cin <- atomically $ dupTChan i
                  let rc = (atomically $ readTChan cin) >>= f >> rc 
                  forkIO rc
 
-initReplica :: (EventGraph g, (Resolver g) ~ IO, Show (g e), Ord e, Effect e, Show a)
+initReplica :: (EGMonad g e IO, Effect e, Show (g e), Show a)
             => String -- ^ Replica name, for logging
             -> (TChan (Broadcast g e)) -- ^ Broadcast channel (in-out)
             -- ^ In-channel for commands and out-channel for return values
-            -> Resolver g (TChan (Op e a), TChan a) 
+            -> IO (TChan (Op e a), TChan a) 
 initReplica name brc = do
   inc <- newTChanIO
   dbgc <- newTChanIO
@@ -148,7 +151,7 @@ initReplica name brc = do
   consume putStrLn dbgc
   let rout = RepOut name outbr retc dbgc
       rin = RepIn commc
-  forkIO (evalStateT (loopReplica rin rout) (Replica empty))
+  forkIO (evalStateT (loopReplica rin rout) initRep)
   return (inc,retc)
 
 test1Replica :: IO ()
@@ -164,7 +167,7 @@ test1Replica = do brc <- newTChanIO :: IO (TChan (Broadcast SetEG Counter))
                   w (const (Sub 3,3))
                   threadDelay (ms 2)
                   w (const (Add 10,10))
-                  w (\v -> (Add 0,v))
+                  w (\(Tally v) -> (Add 0,v))
                   threadDelay (ms 5)
                   return ()
 
@@ -183,7 +186,7 @@ test2Replicas = do
   w1 $ const (Add 2,2)
   w2 $ const (Add 3,3)
   threadDelay (ms 1)
-  w1 $ \v -> (Add 0,v)
-  w2 $ \v -> (Add 0,v)
+  w1 $ \(Tally v) -> (Add 0,v)
+  w2 $ \(Tally v) -> (Add 0,v)
   threadDelay (ms 1)
   return ()

@@ -12,7 +12,9 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Data.EventGraph
                      , Data.EventGraph.SetEG
-                     , Replica
+                     , Data.Effect
+                     , Data.Effect.Common
+                     , ConflictFree
   build-depends:       base >=4.10 && <4.11, containers, mtl
   hs-source-dirs:      lib
   default-language:    Haskell2010
