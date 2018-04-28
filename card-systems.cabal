@@ -16,7 +16,8 @@ library
                      , Data.Effect.Common
                      , ConflictFree
                      , ConflictAware
-  build-depends:       base >=4.10 && <4.11, containers, mtl
+                     , Control.CARD.STM
+  build-depends:       base >=4.10 && <4.11, containers, mtl, stm
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
