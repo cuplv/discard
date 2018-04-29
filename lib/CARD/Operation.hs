@@ -12,6 +12,7 @@ import Control.Lens
 
 import CARD.Store
 import CARD.EventGraph
+import CARD.Network
 
 data LTerm s a = LTerm (s -> a)
 
@@ -79,3 +80,19 @@ invoke (LTerm o) = do h1 <- view hist <$> get
 history :: (MonadEG g (Effect s) m, Rep r, RepEG r ~ g, RepStore r ~ s) 
         => StateT r m (g (Effect s))
 history = view hist <$> get
+
+
+------------------------------------------------------------------------
+
+data Req s g m a = Delivery (g (Effect s)) | Command (FrOp s a) (a -> m ())
+
+runReplica :: (MonadEG g (Effect s) m, MonadBCast s g m, Ord i)
+           => i
+           -> [m (Req s g m a)] 
+           -> m ()
+runReplica i rs = evalStateT program initRep
+  where program = lift (sequence rs) >>= mapM_ handle
+        handle r = case r of
+                     Delivery g -> deliver g
+                     Command o cb -> invoke o >>= lift . cb
+        initRep = FR i empty
