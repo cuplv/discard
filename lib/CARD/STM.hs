@@ -22,9 +22,9 @@ instance (MonadIO m, Store s) => MonadBCast s g (BChan s g m) where
   bcast g = do chan <- ask
                liftIO . atomically . writeTChan chan $ g
 
-type RFace s g m a = ReaderT (TChan (Req s g m a))
+type RFace i s g m a = ReaderT (TChan (Req i s g m a))
 
-rinvoke :: (MonadIO m) => FrOp s a -> RFace s g m a m a
+rinvoke :: (MonadIO m1, MonadIO m2) => FrOp s a -> RFace i s g m1 a m2 a
 rinvoke o = do cbwrite <- liftIO newBroadcastTChanIO
                cbread <- liftIO . atomically $ dupTChan cbwrite
                invoker <- ask
@@ -41,13 +41,12 @@ joinChans f i o = joinChansIO (return . f) i o
 -- | Join two channels end-to-end, performing some IO transformation
 -- in between
 joinChansIO :: (a -> IO b) -> (TChan a) -> (TChan b) -> IO ThreadId
-joinChansIO f i o = do cin <- atomically $ dupTChan i
-                       cout <- atomically $ dupTChan o
-                       let rc = do a <- atomically $ readTChan cin
-                                   b <- f a
-                                   atomically $ writeTChan cout b
-                                   rc
-                       forkIO rc
+joinChansIO f i cout = do cin <- atomically $ dupTChan i
+                          let rc = do a <- atomically $ readTChan cin
+                                      b <- f a
+                                      atomically $ writeTChan cout b
+                                      rc
+                          forkIO rc
 
 -- | Iteratively perform IO actions on items read from a channel
 consume :: (a -> IO ()) -> (TChan a) -> IO ThreadId
@@ -63,14 +62,23 @@ newTPair = do cin <- liftIO newBroadcastTChanIO
               cout <- liftIO . atomically $ dupTChan cin
               return (cin,cout)
 
-runNode :: (Ord i, MonadIO m, MonadEG g (Effect s) m)
+runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (Effect s) m)
         => i
-        -> TChan (g (Effect s)) 
-        -> RFace s g m a m a
+        -> TChan (i, g (Effect s)) 
+        -> RFace i s g (BChan s g m) b m a
         -> (m () -> IO ())
         -> m ()
-runNode (rid :: i) (brc :: TChan (g (Effect s))) (act :: RFace s g m a m a) asIO = do 
-  comm <- newTPair 
-  let reqIter = (makeIter undefined) :: [m (Req s g m a)]
-  liftIO . forkIO . asIO $ runReplica rid reqIter
+runNode (rid :: i) (brc :: TChan (i, g (Effect s))) (act :: RFace i s g (BChan s g m) b m a) asIO = do 
+  req <- liftIO newTChanIO -- Main request queue over which replica iterates
+  liftIO $ joinChans (\(r,g) -> Delivery r g) brc req -- Broadcasts go on the request queue
+  comm <- liftIO newTChanIO -- Commands from main thread will be sent here
+  liftIO $ joinChans id comm req -- Commands go on the request queue
+  let reqIter = liftIO . atomically . readTChan $ req :: BChan s g m (Req i s g (BChan s g m) b)
+  -- brcDup <- liftIO . atomically $ dupTChan brc -- replica reads brcs from this
+  brcPre <- liftIO newBroadcastTChanIO
+  liftIO $ joinChans (\g -> (rid,g)) brcPre brc
+  let repAction = runReplica rid reqIter :: BChan s g m ()
+  let repRun = runReaderT repAction brcPre :: m ()
+  liftIO . forkIO . asIO $ repRun -- run replica
+  runReaderT act comm -- run interactin script on main thread
   return ()

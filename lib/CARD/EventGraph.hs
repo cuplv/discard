@@ -1,8 +1,10 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module CARD.EventGraph where
 
 import Control.Monad (foldM)
+import Control.Monad.Trans
 import Data.Foldable (foldl')
 
 class EventGraph g e where
@@ -22,6 +24,11 @@ class (Monad m, EventGraph g e) => MonadEG g e m where
   -- 'edge' is used to recursively unpack and evaluate the history of
   -- events stored in an event graph.
   edge :: g e -> m [(e, g e)]
+
+instance (Monad (t m), MonadTrans t, MonadEG g e m) => MonadEG g e (t m) where
+  append e g = lift $ append e g
+  merge g1 g2 = lift $ merge g1 g2
+  edge g = lift $ edge g
 
 foldg :: (MonadEG g e m) => (s -> e -> s) -> s -> g e -> m s
 foldg f s g = foldl' f s <$> serialize g

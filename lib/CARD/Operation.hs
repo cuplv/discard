@@ -70,12 +70,15 @@ modifyM f = put =<< (lift . f) =<< get
 
 invoke :: (MonadEG g (Effect s) m, Rep r, RepEG r ~ g, RepStore r ~ s) 
        => FrOp s a
-       -> StateT r m a
+       -> StateT r m (Bool, a)
 invoke (LTerm o) = do h1 <- view hist <$> get
                       (e,a) <- o <$> (lift $ evalHistory h1)
                       h2 <- lift $ append e h1
                       modify (set hist h2)
-                      return a
+                      let change = case e of
+                                     Effect [] -> False
+                                     _ -> True
+                      return (change,a)
 
 history :: (MonadEG g (Effect s) m, Rep r, RepEG r ~ g, RepStore r ~ s) 
         => StateT r m (g (Effect s))
@@ -84,15 +87,25 @@ history = view hist <$> get
 
 ------------------------------------------------------------------------
 
-data Req s g m a = Delivery (g (Effect s)) | Command (FrOp s a) (a -> m ())
+data Req i s g m a = Delivery i (g (Effect s)) | Command (FrOp s a) (a -> m ())
 
-runReplica :: (MonadEG g (Effect s) m, MonadBCast s g m, Ord i)
+runReplica :: (MonadIO m, MonadEG g (Effect s) m, MonadBCast s g m, Ord i, Show i)
            => i
-           -> [m (Req s g m a)] 
+           -> m (Req i s g m a)
            -> m ()
-runReplica i rs = evalStateT program initRep
-  where program = lift (sequence rs) >>= mapM_ handle
+runReplica i rsIter = evalStateT loop initRep
+  where loop = lift rsIter >>= handle >> loop
         handle r = case r of
-                     Delivery g -> deliver g
-                     Command o cb -> invoke o >>= lift . cb
+                     Delivery is g -> 
+                       if is /= i
+                          then do i <- view repID <$> get
+                                  liftIO . putStrLn $ (show i ++ ": handling delivery...")
+                                  deliver g 
+                          else return ()
+                     Command o cb -> do (change,a) <- invoke o
+                                        lift . cb $ a
+                                        if change
+                                           then lift . bcast =<< view hist <$> get
+                                           else return ()
+
         initRep = FR i empty
