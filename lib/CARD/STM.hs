@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ScopedTypeVariables #-}
+-- {-# LANGUAGE ScopedTypeVariables #-}
 
 module CARD.STM where
 
@@ -68,17 +68,16 @@ runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (Effect s) m)
         -> RFace i s g (BChan s g m) b m a
         -> (m () -> IO ())
         -> m ()
-runNode (rid :: i) (brc :: TChan (i, g (Effect s))) (act :: RFace i s g (BChan s g m) b m a) asIO = do 
+runNode rid brc act asIO = do 
   req <- liftIO newTChanIO -- Main request queue over which replica iterates
-  liftIO $ joinChans (\(r,g) -> Delivery r g) brc req -- Broadcasts go on the request queue
+  liftIO $ joinChans (uncurry Delivery) brc req -- Broadcasts go on the request queue
   comm <- liftIO newTChanIO -- Commands from main thread will be sent here
   liftIO $ joinChans id comm req -- Commands go on the request queue
-  let reqIter = liftIO . atomically . readTChan $ req :: BChan s g m (Req i s g (BChan s g m) b)
-  -- brcDup <- liftIO . atomically $ dupTChan brc -- replica reads brcs from this
+  let reqIter = liftIO . atomically . readTChan $ req
   brcPre <- liftIO newBroadcastTChanIO
   liftIO $ joinChans (\g -> (rid,g)) brcPre brc
-  let repAction = runReplica rid reqIter :: BChan s g m ()
-  let repRun = runReaderT repAction brcPre :: m ()
+  let repAction = runReplica rid reqIter
+  let repRun = runReaderT repAction brcPre
   liftIO . forkIO . asIO $ repRun -- run replica
   runReaderT act comm -- run interactin script on main thread
   return ()
