@@ -1,18 +1,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module Data.EventGraph where
+module CARD.EventGraph where
 
 import Control.Monad (foldM)
 import Data.Foldable (foldl')
 
-class EG g e where
+class EventGraph g e where
   -- | Instantiate an empty event graph 'g' for some type 'e' of
   -- events.
   empty :: g e
 
-class (Monad m, EG g e) => EGMonad g e m where
+class (Monad m, EventGraph g e) => MonadEG g e m where
   -- | Add an event to the event graph
-  add :: e -> g e -> m (g e)
+  append :: e -> g e -> m (g e)
   -- | Merge two event graphs, which may share events.
   merge :: g e -> g e -> m (g e)
   -- | Examine the "edge set" of the event graph.  The edge set is the
@@ -23,13 +23,13 @@ class (Monad m, EG g e) => EGMonad g e m where
   -- events stored in an event graph.
   edge :: g e -> m [(e, g e)]
 
-foldg :: (EGMonad g e m) => (s -> e -> s) -> s -> g e -> m s
-foldg f s g = foldl' f s <$> toList g
+foldg :: (MonadEG g e m) => (s -> e -> s) -> s -> g e -> m s
+foldg f s g = foldl' f s <$> serialize g
 
-toList :: (EGMonad g e m) => g e -> m [e]
-toList g = do es <- edge g
-              case es of
-                [] -> return []
-                _ -> do g' <- foldM merge empty (map snd es)
-                        es' <- toList g'
-                        return $ es' ++ (map fst es)
+serialize :: (MonadEG g e m) => g e -> m [e]
+serialize g = do es <- edge g
+                 case es of
+                   [] -> return []
+                   _ -> do g' <- foldM merge empty (map snd es)
+                           es' <- serialize g'
+                           return $ es' ++ (map fst es)

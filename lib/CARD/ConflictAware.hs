@@ -30,12 +30,6 @@ class (Effect e, Monoid (Conref e)) => CEffect e where
   blocks :: Conref e -> e -> Bool
   conEq :: Conref e
 
-class (CEffect e) => MonadAudit e m where
-  audit :: Conref e -> m Bool -- should return a Maybe EG instead
-  release :: Conref e -> m ()
-
-class MonadBCast g e m where
-  bcast :: g e -> m ()
 
 type StoreT g e m a = StateT (Replica g e) m a
 

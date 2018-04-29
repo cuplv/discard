@@ -10,14 +10,12 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Data.EventGraph
-                     , Data.EventGraph.SetEG
-                     , Data.Effect
-                     , Data.Effect.Common
-                     , ConflictFree
-                     , ConflictAware
-                     , Control.CARD.STM
-  build-depends:       base >=4.10 && <4.11, containers, mtl, stm
+  exposed-modules:     CARD.EventGraph
+                     , CARD.EventGraph.SetEG
+                     , CARD.Store
+                     , CARD.Network
+                     , CARD.Operation
+  build-depends:       base >=4.10 && <4.11, containers, mtl, stm, lens
   hs-source-dirs:      lib
   default-language:    Haskell2010
 

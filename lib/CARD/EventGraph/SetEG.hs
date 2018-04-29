@@ -3,13 +3,13 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Data.EventGraph.SetEG where
+module CARD.EventGraph.SetEG where
 
 import Control.Monad.Identity
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-import Data.EventGraph
+import CARD.EventGraph
 
 data SetEG e = SetEG (Set (SetEff e)) deriving (Eq, Ord)
 
@@ -26,12 +26,12 @@ instance (Show e) => Show (SetEG e) where
 emptySetEG :: (Ord e) => SetEG e
 emptySetEG = SetEG mempty
 
-instance (Ord e) => EG SetEG e where
+instance (Ord e) => EventGraph SetEG e where
   empty = emptySetEG
 
 -- Any monad can host a SetEG, and any event with Ord can be stored
-instance (Monad m, Ord e) => EGMonad SetEG e m where
-  add e = return . syncAdd e
+instance (Monad m, Ord e) => MonadEG SetEG e m where
+  append e = return . syncAdd e
   merge g1 g2 = return $ mergeSetEG g1 g2
   edge (SetEG es) = 
     return 
