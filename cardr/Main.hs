@@ -10,6 +10,7 @@ import Control.Concurrent.STM
 import Control.Monad.Identity
 
 import CARD.Prelude
+import CARD.EventGraph.Ipfs
 
 main = test2Replicas
 
@@ -198,24 +199,33 @@ sub n = LTerm (const (Effect [Sub n], n))
 balance :: FrOp Counter Int
 balance = LTerm (\(Counter b) -> (Effect [], b))
 
+testIpfs = runIpfsM "/ip4/127.0.0.1/tcp/5001"
+
 test2Replicas :: IO ()
 test2Replicas = do
   brc <- newBroadcastTChanIO
-  let mkRep :: String -> RFace String Counter SetEG (BChan String Counter SetEG IO) Int IO () -> IO ThreadId
+  let mkRep :: String -> RFace String Counter IpfsEG (BChan String Counter IpfsEG IpfsM) Int IO () -> IO ThreadId
       mkRep rid script = 
-        forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script id
+        forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script testIpfs
+      reportBalance rid = rinvoke balance 
+                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Balance is ") ++) . show 
+                          >> (liftIO $ hFlush stdout)
   mkRep "R1" $ do
+    reportBalance "R1"
     rinvoke (add 20)
-    rinvoke balance >>= liftIO . putStrLn . ("[R1] Balance is " ++) . show >> (liftIO $ hFlush stdout)
-    liftIO $ threadDelay (ms 1)
+    reportBalance "R1"
+    -- liftIO $ threadDelay (ms 1)
     rinvoke (add 10)
+    reportBalance "R1"
     rinvoke (sub 9)
-    rinvoke balance >>= liftIO . putStrLn . ("[R1] Balance is " ++) . show >> (liftIO $ hFlush stdout)
-    liftIO $ threadDelay (ms 2)
-  mkRep "R2" $ do
-    rinvoke (add 20)
-    liftIO $ threadDelay (ms 2)
-    rinvoke balance >>= liftIO . putStrLn . ("[R2] Balance is " ++) . show
-    return ()
-  threadDelay (ms 5)
+    reportBalance "R1"
+    -- liftIO $ threadDelay (ms 2)
+    rinvoke (add 99)
+    reportBalance "R1"
+  -- mkRep "R2" $ do
+  --   rinvoke (add 20)
+  --   liftIO $ threadDelay (ms 2)
+  --   rinvoke balance >>= liftIO . putStrLn . ("[R2] Balance is " ++) . show
+  --   return ()
+  threadDelay (ms 20)
   return ()

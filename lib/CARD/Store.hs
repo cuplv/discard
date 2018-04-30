@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module CARD.Store where
 
@@ -23,6 +24,8 @@ class (Store s, Ord (Cr s)) => AStore s where
 
 newtype Effect s = Effect [Ef s] 
 
+deriving instance (Store s, Read (Ef s)) => Read (Effect s)
+deriving instance (Store s, Show (Ef s)) => Show (Effect s)
 deriving instance (Store s) => Eq (Effect s)
 deriving instance (Store s) => Ord (Effect s)
 
@@ -47,10 +50,10 @@ checkBlock EQV (Effect es) = case es of
 ------------------------------------------------------------------------
 -- Simple implementations
 
-newtype Counter = Counter Int deriving (Show,Eq,Ord)
+newtype Counter = Counter Int deriving (Show,Read,Eq,Ord)
 
 instance Store Counter where
-  data Ef Counter = Add Int | Sub Int deriving (Show,Eq,Ord)
+  data Ef Counter = Add Int | Sub Int deriving (Show,Read,Eq,Ord)
   initStore = Counter 0
   defineEffect (Counter n1) e = case e of
                                   Add n2 -> Counter (n1 + n2)

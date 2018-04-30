@@ -29,6 +29,7 @@ library
                      , text
                      , yaml
                      , aeson
+                     , process
   hs-source-dirs:      lib
   default-language:    Haskell2010
 

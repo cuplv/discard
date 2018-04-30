@@ -65,9 +65,9 @@ newTPair = do cin <- liftIO newBroadcastTChanIO
 runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (i, Effect s) m)
         => i
         -> TChan (i, g (i, Effect s)) 
-        -> RFace i s g (BChan i s g m) b m a
+        -> RFace i s g (BChan i s g m) b IO a
         -> (m () -> IO ())
-        -> m ()
+        -> IO ()
 runNode rid brc act asIO = do 
   req <- liftIO newTChanIO -- Main request queue over which replica iterates
   liftIO $ joinChans (uncurry Delivery) brc req -- Broadcasts go on the request queue
