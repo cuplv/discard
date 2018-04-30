@@ -3,8 +3,8 @@ module Main where
 import System.Exit
 import Control.Monad (foldM)
 
-import Data.EventGraph
-import Data.EventGraph.SetEG
+import CARD
+import CARD.EventGraph.SetEG
 import Data.Set (Set)
 import qualified Data.Set as Set
 
@@ -22,7 +22,7 @@ main = do
       es234 = [ 2 <# 1, 3 <# 1, eff 4 ]
       es434 = [ 4<:3<:2<#1, 3<#1, eff 4 ]
   emit a4321 (tes es234) === tes es434
-  -- l <- toList e3
+  -- l <- serialize e3
   -- l === [1,2,98,99,3,3]
   ee3 <- edge e3
   Set.fromList ee3 === Set.fromList [(3,tes [2 <# 1])
@@ -32,8 +32,8 @@ main = do
                                                            ,(98,empty)
                                                            ,(99,empty)])
   foldM merge empty [tes $ eff 1,empty,empty] =*= pure (tes $ eff 1)
-  toList (tes [3<#1, 2<#1]) =*= pure [1,2,3]
-  toList (tes (eff 1)) =*= pure [1]
+  serialize (tes [3<#1, 2<#1]) =*= pure [1,2,3]
+  serialize (tes (eff 1)) =*= pure [1]
   return ()
 
 

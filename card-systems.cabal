@@ -10,19 +10,28 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     CARD.EventGraph
+  exposed-modules:     CARD
+                     , CARD.Prelude
                      , CARD.EventGraph.SetEG
-                     , CARD.Store
+                     , CARD.STM
+  other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Operation
-                     , CARD.STM
-  build-depends:       base >=4.10 && <4.11, containers, mtl, stm, lens
+                     , CARD.Store
+  build-depends:       base >=4.10 && <4.11
+                     , containers
+                     , mtl
+                     , stm
+                     , lens
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
 executable cardr
   main-is:             Main.hs
-  build-depends:       base >=4.10 && <4.11, card-systems, mtl >= 2.2 && < 2.3, stm
+  build-depends:       base >=4.10 && <4.11
+                     , card-systems
+                     , mtl
+                     , stm
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 

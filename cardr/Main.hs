@@ -9,11 +9,7 @@ import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Identity
 
-import CARD.EventGraph
-import CARD.EventGraph.SetEG
-import CARD.Store
-import CARD.Operation
-import CARD.STM
+import CARD.Prelude
 
 main = test2Replicas
 
