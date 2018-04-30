@@ -205,11 +205,11 @@ balance = LTerm (\(Counter b) -> (Effect [], b))
 test2Replicas :: IO ()
 test2Replicas = do
   brc <- newBroadcastTChanIO
-  let mkRep :: String -> RFace String Counter SetEG (BChan Counter SetEG IO) Int IO () -> IO ThreadId
+  let mkRep :: String -> RFace String Counter SetEG (BChan String Counter SetEG IO) Int IO () -> IO ThreadId
       mkRep rid script = 
         forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script id
   mkRep "R1" $ do
-    liftIO . putStrLn $ "Hello."
+    rinvoke (add 20)
     rinvoke balance >>= liftIO . putStrLn . ("[R1] Balance is " ++) . show >> (liftIO $ hFlush stdout)
     liftIO $ threadDelay (ms 1)
     rinvoke (add 10)
@@ -217,6 +217,7 @@ test2Replicas = do
     rinvoke balance >>= liftIO . putStrLn . ("[R1] Balance is " ++) . show >> (liftIO $ hFlush stdout)
     liftIO $ threadDelay (ms 2)
   mkRep "R2" $ do
+    rinvoke (add 20)
     liftIO $ threadDelay (ms 2)
     rinvoke balance >>= liftIO . putStrLn . ("[R2] Balance is " ++) . show
     return ()

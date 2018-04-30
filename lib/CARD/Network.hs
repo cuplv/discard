@@ -4,8 +4,8 @@ module CARD.Network where
 
 import CARD.Store
 
-class (Store s) => MonadBCast s g m where
-  bcast :: g (Effect s) -> m ()
+class (Ord i, Store s) => MonadBCast i s g m where
+  bcast :: g (i, Effect s) -> m ()
 
 class MonadAuditR m where
   release :: m ()

@@ -16,9 +16,9 @@ import CARD.EventGraph
 import CARD.Network
 import CARD.Operation
 
-type BChan s g = ReaderT (TChan (g (Effect s)))
+type BChan i s g = ReaderT (TChan (g (i, Effect s)))
 
-instance (MonadIO m, Store s) => MonadBCast s g (BChan s g m) where
+instance (Ord i, MonadIO m, Store s) => MonadBCast i s g (BChan i s g m) where
   bcast g = do chan <- ask
                liftIO . atomically . writeTChan chan $ g
 
@@ -62,10 +62,10 @@ newTPair = do cin <- liftIO newBroadcastTChanIO
               cout <- liftIO . atomically $ dupTChan cin
               return (cin,cout)
 
-runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (Effect s) m)
+runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (i, Effect s) m)
         => i
-        -> TChan (i, g (Effect s)) 
-        -> RFace i s g (BChan s g m) b m a
+        -> TChan (i, g (i, Effect s)) 
+        -> RFace i s g (BChan i s g m) b m a
         -> (m () -> IO ())
         -> m ()
 runNode rid brc act asIO = do 

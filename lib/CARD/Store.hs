@@ -40,8 +40,8 @@ checkBlock EQV (Effect es) = case es of
                                [] -> False
                                _ -> True
 
-evalHistory :: (MonadEG g (Effect s) m, Store s) => g (Effect s) -> m s
-evalHistory = foldg runEffect initStore
+-- evalHistory :: (MonadEG g (Effect s) m, Store s) => g (Effect s) -> m s
+-- evalHistory = foldg runEffect initStore
 
 
 ------------------------------------------------------------------------
