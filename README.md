@@ -7,27 +7,36 @@ programming/system model.
 
 ## Quick start ##
 
-Running `$ cabal run` will run the example replica network (a pair of
-replicas concurrently communicating in a multi-threaded program; no
-network involved).
+The current example network is a single node using IPFS to store its
+event graph.  To test it, set up an [ipfs daemon][4] with its API
+exposed on port 5001 (the default) and then run the `cardr`
+executable.
 
-The script that sets up the replicas and gives them their inputs is
-the `test2Replicas` function in the [`cardr/Main.hs` file][2].
+    $ ipfs init
+    $ ipfs daemon --offline &
+    $ cabal run cardr
+
+The script that sets up the replica is the `testIpfsReplica` function
+in the [`cardr/Main.hs` file][2].
 
 
 ## Progress ##
 
-Currently, a very basic conflict-*free* replica system has been
-implemented, which uses an in-memory event graph store and thread
-communication channels as a network.
+A full conflict-*free* replica system has been implemented, which uses
+an in-memory event graph store and thread communication channels as a
+network.
+
+Additionally, an IPFS event graph backend has been implemented.
 
 
 ## Next steps ##
 
-- HTTP-based communication between replicas
-  - Needs a general "communication pipe" abstraction
-- IPFS-based event graph store
-  - Implementing the [`EventGraph` typeclass][3]
+- Safe summarization of event histories
+- Audit coordination protocol and associated interface
+- IPFS pub-sub based communication
+- Faster IPFS event graph backend, using direct manipulation of the
+  DAG instead of reading/writing the unix filesystem
+- HTTP based communication
 - Operations with queries (advancing from a conflict-free to
   conflict-aware model)
 - Embedded CARD programming language for operations
@@ -37,3 +46,4 @@ communication channels as a network.
 [1]: https://arxiv.org/abs/1802.08733
 [2]: ./cardr/Main.hs
 [3]: ./lib/Data/EventGraph.hs
+[4]: https://github.com/ipfs/go-ipfs
