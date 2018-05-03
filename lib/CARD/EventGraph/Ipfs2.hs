@@ -14,6 +14,7 @@ module CARD.EventGraph.Ipfs2
   , runIpfsM
   ) where
 
+import Data.Maybe
 import Control.Monad
 import Control.Monad.Reader
 import Control.Monad.State
@@ -138,3 +139,10 @@ instance (Show e, Read e, Ord e) => MonadEG IpfsEG e (IpfsM e) where
        rs2 <- (Set.map EventRef) <$> underEG s2
        return . IpfsEG $ Set.union (s1 \\ rs2) (s2 \\ rs1)
   edge (IpfsEG s) = mapM inspectEv (Set.toList s)
+  pop (IpfsEG es) = do let (mes,es') = Set.splitAt 1 es
+                           me = listToMaybe (Set.toList mes)
+                       case me of
+                         Just r -> do (e,g) <- inspectEv r
+                                      g' <- merge g (IpfsEG es')
+                                      return (Just e, g')
+                         Nothing -> return (Nothing, IpfsEG es')

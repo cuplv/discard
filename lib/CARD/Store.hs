@@ -71,3 +71,12 @@ instance AStore Counter where
   smartAnd s LE = if Set.member GE s
                      then EQV
                      else Conref $ Set.insert LE s
+
+newtype StrLog = StrLog String deriving (Show,Read,Eq,Ord)
+
+instance Store StrLog where
+  data Ef StrLog = App String deriving (Show,Read,Eq,Ord)
+  initStore = StrLog ""
+  defineEffect (StrLog s1) e = 
+    case e of
+      App s2 -> StrLog $ s1 ++ s2 ++ "\n"

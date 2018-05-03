@@ -14,7 +14,6 @@ library
                      , CARD.Prelude
                      , CARD.EventGraph.SetEG
                      , CARD.STM
-                     , CARD.EventGraph.Ipfs
                      , CARD.EventGraph.Ipfs2
   other-modules:       CARD.EventGraph
                      , CARD.Network

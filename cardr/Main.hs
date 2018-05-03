@@ -30,19 +30,25 @@ sub n = LTerm (const (Effect [Sub n], n))
 balance :: FrOp Counter Int
 balance = LTerm (\(Counter b) -> (Effect [], b))
 
+app :: String -> FrOp StrLog String
+app s = LTerm (const (Effect [App s], s))
+
+readlog :: FrOp StrLog String
+readlog = LTerm (\(StrLog s) -> (Effect [], s))
+
 testIpfs = runIpfsM "/ip4/127.0.0.1/tcp/5001" "./node1"
 
 testIpfsReplica :: IO ()
 testIpfsReplica = do
   brc <- newBroadcastTChanIO
-  let mkRep :: String -> RFace String Counter IpfsEG (BChan String Counter IpfsEG (IpfsM (String, Effect Counter))) Int IO () -> IO ThreadId
+  let mkRep :: String -> RFace String StrLog IpfsEG (BChan String StrLog IpfsEG (IpfsM (String, Effect StrLog))) String IO () -> IO ThreadId
       mkRep rid script = 
         forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script testIpfs
-      reportBalance rid = rinvoke balance 
-                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Balance is ") ++) . show 
+      reportBalance rid = rinvoke readlog 
+                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Log is ") ++) . show 
                           >> (liftIO $ hFlush stdout)
   mkRep "R1" $ do reportBalance "R1"
-                  mapM_ (rinvoke . add) [1..50]
+                  mapM_ (rinvoke . app) (map show [1..10])
                   reportBalance "R1"
   threadDelay (ms 120)
   return ()

@@ -40,10 +40,6 @@ instance (Monad m, Ord e) => MonadEG SetEG e m where
     . map (\(SetEff e g) -> (e,g)) 
     . Set.toList 
     $ es
-  -- pop (SetEG es) = case over _1 (Set.toList) (Set.splitAt 1 es) of
-  --                    ([],es') -> return (Nothing,SetEG es')
-  --                    ([SetEff e g :_],es') -> do es'' <- merge g (SetEG es')
-  --                                                return (Just e,es'')
   pop (SetEG es) = do let (mes,es') = Set.splitAt 1 es
                           me = listToMaybe (Set.toList mes)
                       case me of
