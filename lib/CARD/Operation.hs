@@ -29,9 +29,13 @@ type AwOp s a = LQTerm s (Effect s, a)
 
 ------------------------------------------------------------------------
 
-data Summary i g s = Summary { sumEG :: g (i, Effect s)
-                             , sumVal :: s
-                             , sumOldEGs :: Map (g (i, Effect s)) (g (i, Effect s)) }
+type SEv i g s = g (i, Effect s)
+
+data Summary i g s = Summary { _sumEG :: g (i, Effect s)
+                             , _sumVal :: s
+                             , _sumOldEGs :: Map (g (i, Effect s)) (g (i, Effect s)) }
+
+makeLenses ''Summary
 
 data FrRep i g s = FR { _frRepID :: i
                       , _frHist :: g (i, Effect s) }

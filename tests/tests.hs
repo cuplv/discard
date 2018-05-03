@@ -7,6 +7,7 @@ import CARD
 import CARD.EventGraph.SetEG
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.List (sort)
 
 mks :: (Ord a) => [a] -> Set a
 mks = Set.fromList
@@ -32,7 +33,7 @@ main = do
                                                            ,(98,empty)
                                                            ,(99,empty)])
   foldM merge empty [tes $ eff 1,empty,empty] =*= pure (tes $ eff 1)
-  serialize (tes [3<#1, 2<#1]) =*= pure [1,2,3]
+  serialize (tes [3<#1, 2<#1]) =*= pure (1 : (reverse.sort) [2,3])
   serialize (tes (eff 1)) =*= pure [1]
   return ()
 

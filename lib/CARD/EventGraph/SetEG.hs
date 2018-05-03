@@ -8,6 +8,8 @@ module CARD.EventGraph.SetEG where
 import Control.Monad.Identity
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Control.Lens
+import Data.Maybe
 
 import CARD.EventGraph
 
@@ -38,6 +40,16 @@ instance (Monad m, Ord e) => MonadEG SetEG e m where
     . map (\(SetEff e g) -> (e,g)) 
     . Set.toList 
     $ es
+  -- pop (SetEG es) = case over _1 (Set.toList) (Set.splitAt 1 es) of
+  --                    ([],es') -> return (Nothing,SetEG es')
+  --                    ([SetEff e g :_],es') -> do es'' <- merge g (SetEG es')
+  --                                                return (Just e,es'')
+  pop (SetEG es) = do let (mes,es') = Set.splitAt 1 es
+                          me = listToMaybe (Set.toList mes)
+                      case me of
+                        Just (SetEff e g) -> do g' <- merge g (SetEG es')
+                                                return (Just e,g')
+                        Nothing -> return (Nothing,SetEG es')
 
 emit :: (Ord e) => SetEff e -> SetEG e -> SetEG e
 emit ef@(SetEff e es1) (SetEG s2) = 
