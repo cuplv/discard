@@ -8,6 +8,7 @@ import Control.Monad.State
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Identity
+import Data.Time.Clock.System
 
 import CARD.Prelude
 import CARD.EventGraph.Ipfs2
@@ -41,14 +42,20 @@ testIpfs = runIpfsM "/ip4/127.0.0.1/tcp/5001" "./node1"
 testIpfsReplica :: IO ()
 testIpfsReplica = do
   brc <- newBroadcastTChanIO
-  let mkRep :: String -> RFace String StrLog IpfsEG (BChan String StrLog IpfsEG (IpfsM (String, Effect StrLog))) String IO () -> IO ThreadId
+  let mkRep :: String -> RFace String Counter IpfsEG (BChan String Counter IpfsEG (IpfsM (String, Effect Counter))) Int IO () -> IO ThreadId
       mkRep rid script = 
         forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script testIpfs
-      reportBalance rid = rinvoke readlog 
-                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Log is ") ++) . show 
+      reportBalance rid = rinvoke balance
+                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Balance is ") ++) . show 
                           >> (liftIO $ hFlush stdout)
-  mkRep "R1" $ do reportBalance "R1"
-                  mapM_ (rinvoke . app) (map show [1..10])
+  mkRep "R1" $ do let exper n = do start <- lift $ systemNanoseconds <$> getSystemTime
+                                   result <- rinvoke . add $ n
+                                   end <- lift $ systemNanoseconds <$> getSystemTime
+                                   let secs = (end - start) `div` 1000000
+                                   lift $ appendFile "log.txt" (show n ++ " " ++ show secs ++ "\n")
+                                   return result
                   reportBalance "R1"
-  threadDelay (ms 120)
+                  mapM_ exper [1..50]
+                  reportBalance "R1"
+  threadDelay (ms 85)
   return ()

@@ -40,6 +40,7 @@ executable cardr
                      , card-systems
                      , mtl
                      , stm
+                     , time
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 
