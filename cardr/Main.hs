@@ -8,6 +8,7 @@ import Control.Monad.State
 import Control.Concurrent
 import Control.Concurrent.STM
 import Control.Monad.Identity
+import Data.Time.Clock.System
 
 import CARD.Prelude
 import CARD.EventGraph.Ipfs2
@@ -41,8 +42,14 @@ testIpfsReplica = do
       reportBalance rid = rinvoke balance 
                           >>= liftIO . putStrLn . (("[" ++ rid ++ "] Balance is ") ++) . show 
                           >> (liftIO $ hFlush stdout)
-  mkRep "R1" $ do reportBalance "R1"
-                  mapM_ (rinvoke . add) [1..50]
+  mkRep "R1" $ do let exper n = do start <- lift $ systemNanoseconds <$> getSystemTime
+                                   result <- rinvoke . add $ n
+                                   end <- lift $ systemNanoseconds <$> getSystemTime
+                                   let secs =  (end - start) `div` 1000000
+                                   lift $ appendFile "log.txt" (show n ++ " " ++ show secs ++ "\n")
+                                   return result
                   reportBalance "R1"
-  threadDelay (ms 120)
+                  mapM_ exper [1..50]
+                  reportBalance "R1"
+  threadDelay (ms 85)
   return ()
