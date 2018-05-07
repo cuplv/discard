@@ -10,7 +10,7 @@ import Control.Concurrent.STM
 import Control.Monad.Identity
 
 import CARD.Prelude
-import CARD.EventGraph.Ipfs2
+import CARD.EventGraph.Ipfs
 
 main = testIpfsReplica
 

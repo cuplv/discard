@@ -4,73 +4,141 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module CARD.EventGraph.Ipfs where
+module CARD.EventGraph.Ipfs
+  ( IpfsEG
+  , IpfsM
+  , runIpfsM
+  ) where
 
 import Control.Monad
 import Control.Monad.Reader
+import Control.Monad.State
 import Data.Foldable (foldl')
--- import qualified System.IO as IO (hFlush,stdout)
--- import Turtle
--- import Turtle.Prelude (cd,ls,mv)
--- import Control.Foldl (list)
--- import Data.Text (Text,pack,unpack,stripEnd)
-
-import System.Process (readProcess)
-
+import Data.Map (Map)
+import qualified Data.Map as Map
+import System.Process (callProcess,readProcess,readCreateProcess,proc)
+import System.Directory
 import Data.Semigroup ((<>))
+import Data.Maybe
 
-import Data.Set (Set)
+import Data.Set (Set,(\\))
 import qualified Data.Set as Set
 
 import CARD.EventGraph
 
--- | An IPFS object
-newtype EventRef e = EventRef String deriving (Show, Read, Eq, Ord)
+payloadName = "PAYLOAD"
+prevName = "PREV"
+
+newtype EventRef e = EventRef { eventHash :: String } deriving (Show, Read, Eq, Ord)
 
 newtype IpfsEG e = IpfsEG (Set (EventRef e)) deriving (Show, Read, Eq, Ord)
 
 instance (Ord e) => EventGraph IpfsEG e where
   empty = IpfsEG Set.empty
-  
-data Event e = Event e (IpfsEG e) deriving (Show, Read, Eq, Ord)
 
-data IpfsConf = IpfsConf { ipfsAPI :: String }
+data IpfsConf = IpfsConf { ipfsAPI :: String
+                         , homeDir :: String }
 
-newtype IpfsM a = IpfsM (ReaderT IpfsConf IO a) 
-                  deriving (Functor, Applicative, Monad, MonadIO)
+data IpfsState e = IpfsState { fsCache :: Map (EventRef e) FilePath }
 
-runIpfsM :: String -> IpfsM a -> IO a
-runIpfsM api (IpfsM r) = runReaderT r (IpfsConf api)
+newtype IpfsM e a = IpfsM (StateT (IpfsState e) (ReaderT IpfsConf IO) a) 
+                    deriving (Functor, Applicative, Monad, MonadIO)
 
-deriving instance MonadReader IpfsConf IpfsM
+deriving instance MonadReader IpfsConf (IpfsM e)
+deriving instance MonadState (IpfsState e) (IpfsM e)
 
-storeEv :: (Ord e, Show e) => Event e -> IpfsM (EventRef e)
-storeEv e = do api <- ipfsAPI <$> ask
-               EventRef <$> liftIO (readProcess 
-                 "ipfs" 
-                 ["--api",api,"add","-Q"] 
-                 (show e))
+runIpfsM :: String -> FilePath -> IpfsM e a -> IO a
+runIpfsM api home (IpfsM a) = 
+  createDirectoryIfMissing True home
+  >> runReaderT (evalStateT a (IpfsState Map.empty)) (IpfsConf api home)
 
-fetchEv :: (Ord e, Read e) => EventRef e -> IpfsM (Event e)
-fetchEv (EventRef s) = do api <- ipfsAPI <$> ask
-                          read <$> liftIO (readProcess 
-                            "ipfs" 
-                            ["--api",api,"cat"]
-                            ("/ipfs/"++ s))
+checkCache :: (Ord e, Read e) => EventRef e -> IpfsM e (Maybe FilePath)
+checkCache e = Map.lookup e . fsCache <$> get
 
-instance (Show e, Read e, Ord e) => MonadEG IpfsEG e IpfsM where
-  append e g = IpfsEG . Set.singleton <$> storeEv (Event e g)
-  merge (IpfsEG g1) (IpfsEG g2) = 
-    do rs1 <- refHistory (IpfsEG g1)
-       rs2 <- refHistory (IpfsEG g2)
-       return . IpfsEG $ Set.union (g1 Set.\\ rs2) (g2 Set.\\ rs1)
-  edge (IpfsEG es) = map (\(Event e g) -> (e,g)) <$> mapM fetchEv (Set.toList es)
+addCache :: (Ord e, Read e) => EventRef e -> FilePath -> IpfsM e ()
+addCache e fp = put =<< IpfsState . Map.insert e fp . fsCache <$> get 
 
-refHistory :: (Show e, Read e, Ord e) => IpfsEG e -> IpfsM (Set (EventRef e))
-refHistory g = foldl' Set.union Set.empty 
-               <$> (mapM (collectRefs . snd) =<< edge g)
+invalCache :: EventRef e -> IpfsM e ()
+invalCache e = put =<< IpfsState . Map.delete e . fsCache <$> get
 
-collectRefs :: (Show e, Read e, Ord e) => IpfsEG e -> IpfsM (Set (EventRef e))
-collectRefs (IpfsEG g1) = 
-  do es <- edge (IpfsEG g1)
-     foldM (\s1 (_,g2) -> Set.union s1 <$> (collectRefs g2)) g1 es
+askHome :: IpfsM e FilePath
+askHome = homeDir <$> ask
+
+askApi :: IpfsM e String
+askApi = ipfsAPI <$> ask
+
+inspectEv :: (Ord e, Read e) => EventRef e -> IpfsM e (e, IpfsEG e)
+inspectEv e = 
+  do fp <- cacheEv e
+     home <- askHome
+     let cachePath = (home <> "/" <> fp)
+         absol p = (home <> "/") <> p
+     payload <- liftIO $ read <$> readFile (absol fp <> "/" <> payloadName)
+     prev <- liftIO $ listDirectory (absol fp <> "/" <> prevName)
+     mapM (\p -> addCache (EventRef p) (fp <> "/" <> prevName <> "/" <> p)) prev
+     return (payload, IpfsEG $ Set.fromList (map EventRef prev))
+
+cacheEv :: (Ord e, Read e) => EventRef e -> IpfsM e FilePath
+cacheEv e = do
+  mfp <- checkCache e
+  case mfp of
+    Just fp -> return fp
+    Nothing -> do let fp = eventHash e
+                  home <- askHome
+                  ipfs "get" [ "-o", home <> "/" <> fp
+                             , "/ipfs/" <> fp]
+                  addCache (EventRef fp) fp
+                  return fp
+
+lio :: (MonadIO m) => IO a -> m a 
+lio = liftIO
+
+storeEv :: (Ord e, Show e, Read e) => (e, IpfsEG e) -> IpfsM e (EventRef e)
+storeEv (e,(IpfsEG g)) = do 
+  home <- askHome
+  api <- askApi
+  let newEventDir = home <> "/" <> "new-event"
+  lio$ createDirectory newEventDir
+  lio$ writeFile (newEventDir <> "/" <> payloadName) (show e)
+  lio$ createDirectory (newEventDir <> "/" <> prevName)
+  mapM_ (consumeEv (newEventDir <> "/" <> prevName)) (Set.toList g)
+  ev' <- ipfs "add" ["-rQ",newEventDir]
+  lio$ removeDirectoryRecursive newEventDir
+  return (EventRef . head . lines $ ev')
+
+consumeEv :: (Ord e, Read e) => FilePath -> EventRef e -> IpfsM e ()
+consumeEv newDir e = do 
+  home <- askHome
+  fp <- ((home <> "/") <>) <$> cacheEv e
+  lio$ callProcess "mv" [fp,newDir <> "/"]
+  urs <- Set.toList <$> underRefs e
+  mapM_ (invalCache . EventRef) urs
+
+ipfs :: String -> [String] -> IpfsM e String
+ipfs cmd args = ipfs' cmd args ""
+
+ipfs' :: String -> [String] -> String -> IpfsM e String
+ipfs' cmd args inp = do 
+  api <- askApi
+  lio$ readProcess "ipfs" (["--api",api,cmd] ++ args) inp
+
+underRefs :: EventRef e -> IpfsM e (Set String)
+underRefs (EventRef e) = do
+  api <- askApi
+  Set.fromList . lines <$> ipfs "refs" ["/ipfs/" ++ e]
+
+instance (Show e, Read e, Ord e) => MonadEG IpfsEG e (IpfsM e) where
+  append e g = IpfsEG . Set.singleton <$> storeEv (e,g)
+  merge (IpfsEG s1) (IpfsEG s2) = 
+    do let underEG s = foldl' Set.union Set.empty <$> mapM underRefs (Set.toList s)
+       rs1 <- (Set.map EventRef) <$> underEG s1
+       rs2 <- (Set.map EventRef) <$> underEG s2
+       return . IpfsEG $ Set.union (s1 \\ rs2) (s2 \\ rs1)
+  edge (IpfsEG s) = mapM inspectEv (Set.toList s)
+  pop (IpfsEG es) = do let (mes,es') = Set.splitAt 1 es
+                           me = listToMaybe (Set.toList mes)
+                       case me of
+                         Just r -> do (e,g) <- inspectEv r
+                                      g' <- merge g (IpfsEG es')
+                                      return (Just (e, g'))
+                         Nothing -> return Nothing
