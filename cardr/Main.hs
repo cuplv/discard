@@ -37,12 +37,12 @@ app s = LTerm (const (Effect [App s], s))
 readlog :: FrOp StrLog String
 readlog = LTerm (\(StrLog s) -> (Effect [], s))
 
-testIpfs = runIpfsM "/ip4/127.0.0.1/tcp/5001" "./node1"
+testIpfs = id -- runIpfsM "/ip4/127.0.0.1/tcp/5001" "./node1"
 
 testIpfsReplica :: IO ()
 testIpfsReplica = do
   brc <- newBroadcastTChanIO
-  let mkRep :: String -> RFace String Counter IpfsEG (BChan String Counter IpfsEG (IpfsM (String, Effect Counter))) Int IO () -> IO ThreadId
+  let mkRep :: String -> RFace String Counter SetEG (BChan String Counter SetEG IO) Int IO () -> IO ThreadId
       mkRep rid script = 
         forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script testIpfs
       reportBalance rid = rinvoke balance
