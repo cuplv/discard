@@ -23,6 +23,7 @@ import qualified Data.Map as Map
 import System.Process (callProcess,readProcess,readCreateProcess,proc)
 import System.Directory
 import Data.Semigroup ((<>))
+import Data.Maybe
 
 import Data.Set (Set,(\\))
 import qualified Data.Set as Set
@@ -138,3 +139,10 @@ instance (Show e, Read e, Ord e) => MonadEG IpfsEG e (IpfsM e) where
        rs2 <- (Set.map EventRef) <$> underEG s2
        return . IpfsEG $ Set.union (s1 \\ rs2) (s2 \\ rs1)
   edge (IpfsEG s) = mapM inspectEv (Set.toList s)
+  pop (IpfsEG es) = do let (mes,es') = Set.splitAt 1 es
+                           me = listToMaybe (Set.toList mes)
+                       case me of
+                         Just r -> do (e,g) <- inspectEv r
+                                      g' <- merge g (IpfsEG es')
+                                      return (Just (e, g'))
+                         Nothing -> return Nothing
