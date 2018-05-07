@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -22,9 +23,9 @@ instance (Ord i, MonadIO m, Store s) => MonadBCast i s g (BChan i s g m) where
   bcast g = do chan <- ask
                liftIO . atomically . writeTChan chan $ g
 
-type RFace i s g m a = ReaderT (TChan (Req i s g m a))
+type RFace r m a = ReaderT (TChan (Req r m a))
 
-rinvoke :: (MonadIO m1, MonadIO m2) => FrOp s a -> RFace i s g m1 a m2 a
+rinvoke :: (MonadIO m1, MonadIO m2) => FrOp (RepStore r) a -> RFace r m1 a m2 a
 rinvoke o = do cbwrite <- liftIO newBroadcastTChanIO
                cbread <- liftIO . atomically $ dupTChan cbwrite
                invoker <- ask
@@ -62,10 +63,16 @@ newTPair = do cin <- liftIO newBroadcastTChanIO
               cout <- liftIO . atomically $ dupTChan cin
               return (cin,cout)
 
-runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (i, Effect s) m)
+-- runNode :: (Show i, Ord i, MonadIO m, Store s, MonadEG g (i, Effect s) m)
+--         => i
+--         -> TChan (i, g (i, Effect s)) 
+--         -> RFace i s g (BChan i s g m) b IO a
+--         -> (m () -> IO ())
+--         -> IO ()
+runNode :: (MonadIO m, Rep r m, RepID r ~ i)
         => i
-        -> TChan (i, g (i, Effect s)) 
-        -> RFace i s g (BChan i s g m) b IO a
+        -> TChan (i, REg r)
+        -> RFace r (BChan i (RepStore r) (RepEG r) m) b IO a
         -> (m () -> IO ())
         -> IO ()
 runNode rid brc act asIO = do 
