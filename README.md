@@ -7,6 +7,19 @@ programming/system model.
 
 ## Quick start ##
 
+First, get the project.
+
+    $ git clone https://github.com/cuplv/card-systems
+    $ cd card-systems
+
+Next, make sure you can build the project.  If you have the
+[`nix`](https://nixos.org) package manager, here is a process:
+
+    $ nix-env -i cabal2nix cabal-install
+    $ cabal2nix --shell . > shell.nix
+    $ nix-shell --command "cabal configure"
+    $ cabal build
+
 The current example network is a single node using IPFS to store its
 event graph.  To test it, set up an [ipfs daemon][4] with its API
 exposed on port 5001 (the default) and then run the `cardr`
