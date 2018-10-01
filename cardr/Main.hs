@@ -15,8 +15,8 @@ import CARD.EventGraph.Ipfs
 main = testIpfsReplica
 
 reader :: String -> TChan String -> IO ()
-reader name c = atomically (readTChan c) 
-                >>= putStrLn . (\m -> name ++ ": " ++ m) 
+reader name c = atomically (readTChan c)
+                >>= putStrLn . (\m -> name ++ ": " ++ m)
                 >> reader name c
 
 ms = (* 1000000)
@@ -36,13 +36,13 @@ testIpfsReplica :: IO ()
 testIpfsReplica = do
   brc <- newBroadcastTChanIO
   let mkRep :: String -> RFace (FrRep String IpfsEG Counter) (BChan String Counter IpfsEG (IpfsM (String, Effect Counter))) Int IO () -> IO ThreadId
-      mkRep rid script = 
+      mkRep rid script =
         forkIO $ putStrLn (rid ++ " starting...") >> runNode rid brc script testIpfs
-      reportBalance rid = rinvoke balance 
-                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Balance is ") ++) . show 
+      reportBalance rid = rinvoke balance
+                          >>= liftIO . putStrLn . (("[" ++ rid ++ "] Balance is ") ++) . show
                           >> (liftIO $ hFlush stdout)
   mkRep "R1" $ do reportBalance "R1"
-                  mapM_ (rinvoke . add) [1..50]
+                  mapM_ (rinvoke . sub) [1..50]
                   reportBalance "R1"
   threadDelay (ms 120)
   return ()

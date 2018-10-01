@@ -60,3 +60,18 @@ Additionally, an IPFS event graph backend has been implemented.
 [2]: ./cardr/Main.hs
 [3]: ./lib/Data/EventGraph.hs
 [4]: https://github.com/ipfs/go-ipfs
+
+## Alternate setup ##
+Without nix, or if nix doesn't work, here's another way to set up the system.
+
+1. [Install ipfs](https://docs.ipfs.io/introduction/install/)
+1. [Install stack](https://docs.haskellstack.org/en/stable/README/#how-to-install)
+1. Execute the following command within the repo:
+    ```
+    $ stack setup
+    ```
+1. To build and run the code, use the commands,
+    ```
+    $ stack build
+    $ stack exec cardr
+    ```
