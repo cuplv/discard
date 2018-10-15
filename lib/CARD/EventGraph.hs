@@ -1,44 +1,149 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE DeriveGeneric #-}
 
-module CARD.EventGraph where
+module CARD.EventGraph
+  ( Edge (edgeSet)
+  , unsafeMakeEdge
+  , empty
+  , EGB (..)
+  , EG (..)
+  , append
+  , liftEvent
+  , contains
+  , vis'
+  , merge
+  , pop
+  , edge
+  , foldg
+  , serialize
+  ) where
 
-import Control.Monad (foldM)
-import Control.Monad.Trans
+import Control.Monad (foldM,filterM)
 import Data.Foldable (foldl')
+import Data.Set (Set)
+import qualified Data.Set as Set
+import Control.Monad.Trans
+import GHC.Generics
+import Data.Aeson
 
-class EventGraph g e where
-  -- | Instantiate an empty event graph 'g' for some type 'e' of
-  -- events.
-  empty :: g e
+-- | The "edge set" defining an event graph.  The edge set is the set
+-- of "latest" events, or those which do not have any outgoing edges
+-- in the graph.  This edge is not a single event because events in
+-- the graph are only partially ordered.
+--
+-- 'e' is the recursive event structure and 'd' is the data payload
+-- each event holds.
+data Edge r d = Edge { edgeSet :: Set (Event r d) } deriving (Generic)
 
-class (Monad m, EventGraph g e) => MonadEG g e m where
-  -- | Add an event to the event graph
-  append :: e -> g e -> m (g e)
-  -- | Merge two event graphs, which may share events.
-  merge :: g e -> g e -> m (g e)
-  -- | Examine the "edge set" of the event graph.  The edge set is the
-  -- set of events which do not come before any other event in the
-  -- graph.
-  --
-  -- 'edge' is used to recursively unpack and evaluate the history of
-  -- events stored in an event graph.
-  edge :: g e -> m [(e, g e)]
-  -- | Take only the (arbitrarily) last event from the event graph.
-  -- 'Nothing' is returned when the graph is empty
-  pop :: g e -> m (Maybe (e, g e))
+deriving instance (Eq (Event r d)) => Eq (Edge r d)
+deriving instance (Ord (Event r d)) => Ord (Edge r d)
 
-instance (Monad (t m), MonadTrans t, MonadEG g e m) => MonadEG g e (t m) where
-  append e g = lift $ append e g
-  merge g1 g2 = lift $ merge g1 g2
-  edge g = lift $ edge g
-  pop g = lift $ pop g
+instance (Show (Event r d)) => Show (Edge r d) where
+  show g = "{ " 
+           ++ concat (map ((++ ", ") . show) (Set.toList (edgeSet g))) 
+           ++ " }"
 
-foldg :: (MonadEG g e m) => (s -> e -> s) -> s -> g e -> m s
-foldg f s g = foldl' f s <$> serialize g
+instance (ToJSON (Event r d)) => ToJSON (Edge r d) where
+  toEncoding = genericToEncoding defaultOptions
 
-serialize :: (MonadEG g e m) => g e -> m [e]
-serialize g = do me <- pop g
-                 case me of
-                   Nothing -> return []
-                   Just (e,g') -> (++ [e]) <$> serialize g'
+instance (Ord (Event r d), FromJSON (Event r d)) => FromJSON (Edge r d)
+
+-- | Create an empty event graph
+empty :: Edge e d
+empty = Edge Set.empty
+
+-- | Create an event graph from a set of events without checking for
+-- uniqueness.  Note that this allows events to duplicate in
+-- serialization!  This function is intended for testing purposes.
+unsafeMakeEdge = Edge
+
+class EGB r where
+  data Event r :: * -> *
+
+-- type Event r d = (EventStruct r) d
+
+class (EGB r, Monad m, Eq (Event r d), Ord (Event r d)) => EG r d m where
+  event :: r -> Edge r d -> d -> m (Event r d)
+  unpack :: r -> Event r d -> m (d, Edge r d)
+  vis :: r -> Event r d -> Event r d -> m Bool
+
+-- | Create a new event, appending it to the event graph
+append :: (EG r d m) => r -> Edge r d -> d -> m (Edge r d)
+append r g d = liftEvent <$> event r g d
+
+-- | Create a graph with a single event as its edge
+liftEvent :: (Ord (Event r d)) => Event r d -> Edge r d
+liftEvent e = Edge . Set.fromList $ [e]
+
+listLast :: [a] -> Maybe a
+listLast = \case
+  [] -> Nothing
+  (a:[]) -> Just a
+  (_:as) -> listLast as
+
+mayMap :: (Applicative m) => (a -> m b) -> Maybe a -> m (Maybe b)
+mayMap f = \case Just a -> Just <$> f a
+                 Nothing -> pure Nothing
+
+orM :: (Monad m) => (a -> m Bool) -> [a] -> m Bool
+orM f (a:as) = do r <- f a
+                  if r
+                     then return True
+                     else orM f as
+orM f [] = return False
+
+-- | Check if the graph contains the event
+contains :: (EG r d m) => r -> Edge r d -> Event r d -> m Bool
+contains r (Edge s) e = do let inEdge = Set.member e s 
+                           inHist <- orM (vis r e) (Set.toList s)
+                           return $ or [inEdge,inHist]
+
+-- | Check if the event is in the /history/ of any of the graph's edge
+-- events.  This will return 'False' if the event is actually one of
+-- the edge events.
+vis' :: (EG r d m) => r -> Event r d -> Edge r d -> m Bool
+vis' r e (Edge s) = orM (vis r e) (Set.toList s)
+
+-- | Merge two event graphs (which may have common prefixes)
+merge :: (EG r d m) => r -> Edge r d -> Edge r d -> m (Edge r d)
+merge r g1@(Edge s1) g2@(Edge s2) = do 
+  us1 <- filterM (\e -> not <$> (vis' r e g2)) (Set.toList s1)
+  us2 <- filterM (\e -> not <$> (vis' r e g1)) (Set.toList s2)
+  return (Edge (Set.union (Set.fromList us1) (Set.fromList us2)))
+
+setLast :: Set a -> Maybe (a, Set a)
+setLast xs = let (as,bs) = Set.splitAt (Set.size xs - 1) xs
+             in case Set.toList bs of
+                  b:[] -> Just (b,as)
+                  _ -> Nothing
+
+-- | Remove the (arbitrarily) last event from an event graph,
+-- returning its payload and the edge set of the rest of the graph.
+pop :: (EG r d m) => r -> Edge r d -> m (Maybe (d, Edge r d))
+pop r (Edge s) = mayMap f (setLast s)
+  where f (e,es1) = do (d,es2) <- unpack r e
+                       es3 <- merge r (Edge es1) es2
+                       return (d,es3)
+
+-- | Unpack all events in an edge set, returning them in their
+-- arbitrary order sequence
+edge :: (EG r d m) => r -> Edge r d -> m [(d, Edge r d)]
+edge r (Edge s) = mapM (unpack r) (Set.toList s)
+
+-- | Fold over the elements of an event graph
+foldg :: (EG r d m) => r -> (s -> d -> s) -> s -> Edge r d -> m s
+foldg r f s g = foldl' f s <$> serialize r g
+
+-- | Totally order the elements of an event graph, using their
+-- arbitrary ordering to resolve parallel events.
+serialize :: (EG r d m) => r -> Edge r d -> m [d]
+serialize r g = do me <- pop r g
+                   case me of
+                     Nothing -> return []
+                     Just (d,g') -> (++ [d]) <$> serialize r g'

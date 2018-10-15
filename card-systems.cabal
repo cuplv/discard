@@ -11,15 +11,11 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     CARD
-                     , CARD.Prelude
                      , CARD.EventGraph.SetEG
-                     , CARD.STM
-                     , CARD.EventGraph.Ipfs
   other-modules:       CARD.EventGraph
                      , CARD.Network
-                     , CARD.Operation
                      , CARD.Store
-  build-depends:       base >=4.10 && <4.11
+  build-depends:       base >=4.10 && <4.13
                      , containers
                      , mtl
                      , stm
@@ -31,23 +27,33 @@ library
                      , aeson
                      , process
                      , directory
+                     , http-client
+                     , wai
+                     , warp
+                     , http-types
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
 executable cardr
   main-is:             Main.hs
-  build-depends:       base >=4.10 && <4.11
+  build-depends:       base >=4.10 && <4.13
                      , card-systems
                      , mtl
                      , stm
+                     , http-client
+                     , wai
+                     , warp
+                     , http-types
+                     , text
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 
-test-suite tests
-  type:                exitcode-stdio-1.0
-  main-is:             tests.hs
-  hs-source-dirs:      tests
-  default-language:    Haskell2010
-  build-depends:       base >=4.10 && <4.11
-                     , containers
-                     , card-systems
+-- test-suite tests
+--   type:                exitcode-stdio-1.0
+--   main-is:             tests.hs
+--   hs-source-dirs:      tests
+--   default-language:    Haskell2010
+--   build-depends:       base >=4.10 && <4.13
+--                      , containers
+--                      , card-systems
+--                      , mtl
