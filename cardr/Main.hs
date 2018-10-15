@@ -23,13 +23,13 @@ main = do
   args <- getArgs
   case args of
     ["send",destStr,port,e1,e2] -> do 
+      let app' = appendAs (1::Int) SetEG
       let n1 = read e1 :: Int
           n2 = read e2 :: Int
       dest <- mkDest destStr
       chan <- mkListener (mkSrc $ read port)
-      hist1 <- append SetEG empty (1::Int,Effect [Add n1])
-      hist2 <- append SetEG hist1 (1::Int,Effect [Add n2])
-      send dest (BCast 1 hist2)
+      hist <- app' (ef$ Add n2) =<< app' (ef$ Add n1) empty
+      send dest (BCast 1 hist)
       (BCast i e) <- atomically (readTChan chan)
       putStrLn.show $ e
     ["listen",destStr,port,app,conc] -> do
@@ -38,10 +38,11 @@ main = do
       respond dest chan app conc
 
 respond dest chan app conc = do
+  let app' = appendAs (0::Int) SetEG
   (BCast i hist) <- atomically $ readTChan chan
   putStrLn "Got message."
-  hist3 <- append SetEG hist (0::Int,Effect [Add (read app)])
-  hist4 <- append SetEG empty (0::Int,Effect [Add (read conc)])
+  hist3 <- app' (ef$ Add (read app)) hist
+  hist4 <- app' (ef$ Add (read conc)) empty
   hist5 <- merge SetEG hist3 hist4
   send dest (BCast 0 hist5)
   respond dest chan app conc

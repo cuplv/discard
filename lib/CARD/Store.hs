@@ -35,6 +35,12 @@ instance (ToJSON (Ef s)) => ToJSON (Effect s) where
 
 instance (Ord (Ef s), FromJSON (Ef s)) => FromJSON (Effect s)
 
+ef :: Ef s -> Effect s
+ef e = Effect [e]
+
+(|>|) :: Effect s -> Effect s -> Effect s
+(|>|) (Effect e1) (Effect e2) = Effect (e1 ++ e2)
+
 runEffect :: (Store s) => s -> Effect s -> s
 runEffect s (Effect es) = foldl' defineEffect s es
 
@@ -53,6 +59,11 @@ checkBlock (Conref cs) (Effect es) = or (defineConflict <$> (Set.toList cs) <*> 
 checkBlock EQV (Effect es) = case es of
                                [] -> False
                                _ -> True
+
+type Hist i r s = Edge r (i, Effect s)
+
+appendAs :: (EG r (i, Effect s) m) => i -> r -> Effect s -> Hist i r s -> m (Hist i r s)
+appendAs i r e = append r (i,e)
 
 -- evalHistory :: (MonadEG g (Effect s) m, Store s) => g (Effect s) -> m s
 -- evalHistory = foldg runEffect initStore

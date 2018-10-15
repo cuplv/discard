@@ -74,8 +74,8 @@ class (EGB r, Monad m, Eq (Event r d), Ord (Event r d)) => EG r d m where
   vis :: r -> Event r d -> Event r d -> m Bool
 
 -- | Create a new event, appending it to the event graph
-append :: (EG r d m) => r -> Edge r d -> d -> m (Edge r d)
-append r g d = liftEvent <$> event r g d
+append :: (EG r d m) => r -> d -> Edge r d -> m (Edge r d)
+append r d g = liftEvent <$> event r g d
 
 -- | Create a graph with a single event as its edge
 liftEvent :: (Ord (Event r d)) => Event r d -> Edge r d

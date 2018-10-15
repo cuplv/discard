@@ -68,7 +68,7 @@ msgGetter handle request respond = do
   body <- strictRequestBody request
   case decode body of
     Just msg -> handle msg
-  respond $ responseLBS status200 [] "Ok"
+  respond $ responseLBS status200 [] "Thanks."
 
 instance (ToJSON (CMsg i r s), FromJSON (CMsg i r s)) => Carries HttpT i r s where
   send (HttpDest man dest) msg = do
