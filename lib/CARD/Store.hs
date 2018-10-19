@@ -54,6 +54,12 @@ instance (ToJSON (Cr s)) => ToJSON (Conref s) where
 
 instance (Ord (Cr s), FromJSON (Cr s)) => FromJSON (Conref s)
 
+cr :: Cr s -> Conref s
+cr c = Conref (Set.singleton c)
+
+(|&|) :: (Store s) => Conref s -> Conref s -> Conref s
+(|&|) (Conref c1) (Conref c2) = Conref (Set.union c1 c2)
+
 checkBlock :: (Store s) => Conref s -> Effect s -> Bool
 checkBlock (Conref cs) (Effect es) = or (defineConflict <$> (Set.toList cs) <*> es)
 checkBlock EQV (Effect es) = case es of
@@ -65,8 +71,8 @@ type Hist i r s = Edge r (i, Effect s)
 appendAs :: (EG r (i, Effect s) m) => i -> r -> Effect s -> Hist i r s -> m (Hist i r s)
 appendAs i r e = append r (i,e)
 
--- evalHistory :: (MonadEG g (Effect s) m, Store s) => g (Effect s) -> m s
--- evalHistory = foldg runEffect initStore
+evalHist :: (Store s, EG r (i, Effect s) m) => r -> s -> Hist i r s -> m s
+evalHist res s0 = foldg res (\s (_,e) -> runEffect s e) s0
 
 
 ------------------------------------------------------------------------
@@ -90,23 +96,3 @@ instance FromJSON (Ef Counter)
 instance ToJSON (Cr Counter) where
   toEncoding = genericToEncoding defaultOptions
 instance FromJSON (Cr Counter)
-
--- instance CARD Counter where
---   data Ef Counter = Add Int | Sub Int deriving (Show,Read,Eq,Ord)
---   initStore = Counter 0
---   defineEffect (Counter n1) e = case e of
---                                   Add n2 -> Counter (n1 + n2)
---                                   Sub n2 -> Counter (n1 - n2)
-
--- instance CARD Counter where
---   data Cr Counter = GE | LE deriving (Show,Eq,Ord)
---   defineBlock GE e = case e of
---                        Add _ -> True
---                        _ -> False
---   defineBlock LE e = not $ defineBlock GE e
---   smartAnd s GE = if Set.member LE s
---                      then EQV
---                      else Conref $ Set.insert GE s
---   smartAnd s LE = if Set.member GE s
---                      then EQV
---                      else Conref $ Set.insert LE s

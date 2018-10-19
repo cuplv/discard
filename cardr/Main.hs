@@ -6,7 +6,7 @@ module Main where
 import System.IO
 import Control.Monad.State
 import Control.Concurrent
-import Control.Concurrent.STM
+import Control.Concurrent.STM hiding (check)
 import Control.Monad.Identity
 import Data.Text (Text)
 import qualified Data.Text as Text
@@ -14,38 +14,54 @@ import Network.HTTP.Client
 import Network.Wai
 import Network.Wai.Handler.Warp
 import System.Environment
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Control.Monad.State
 
 import CARD
 import CARD.EventGraph.SetEG
+import CARD.Store.CA
 
 main :: IO ()
 main = do
   args <- getArgs
   case args of
-    ["send",destStr,port,e1,e2] -> do 
-      let app' = appendAs (1::Int) SetEG
-      let n1 = read e1 :: Int
-          n2 = read e2 :: Int
-      dest <- mkDest destStr
-      chan <- mkListener (mkSrc $ read port)
-      hist <- app' (ef$ Add n2) =<< app' (ef$ Add n1) empty
-      send dest (BCast 1 hist)
-      (BCast i e) <- atomically (readTChan chan)
-      putStrLn.show $ e
-    ["listen",destStr,port,app,conc] -> do
-      dest <- mkDest destStr
-      chan <- mkListener (mkSrc $ read port)
-      respond dest chan app conc
+    ["send",destStr,port] -> do 
 
-respond dest chan app conc = do
-  let app' = appendAs (0::Int) SetEG
-  (BCast i hist) <- atomically $ readTChan chan
-  putStrLn "Got message."
-  hist3 <- app' (ef$ Add (read app)) hist
-  hist4 <- app' (ef$ Add (read conc)) empty
-  hist5 <- merge SetEG hist3 hist4
-  send dest (BCast 0 hist5)
-  respond dest chan app conc
+      dest <- mkDest destStr
+      let src = mkSrc $ read port
+      chan <- mkListener src
+
+      let conf = RepConfig 1 src chan (Counter 0) SetEG (Map.fromList [(1,dest)])
+          rep = RepRT conf (Counter 0) empty
+          step = do
+            n <- read <$> lift getLine
+            emit (ef$ Add n)
+            lift . putStrLn . ("Store is now " ++) . show =<< check
+            step
+
+      runStateT step rep
+      return ()
+
+    ["listen",destStr,port,thr,extra] -> do
+      dest <- mkDest destStr
+      let src = mkSrc $ read port
+          extra' = read extra :: Int
+      chan <- mkListener src
+      let conf = RepConfig 0 src chan (Counter 0) SetEG (Map.fromList [(0,dest)])
+          rep = RepRT conf (Counter 0) empty
+      let step = do
+            update
+            emit (ef$ Add extra')
+            step
+          script = do
+            lift$ putStrLn $ "Waiting until store is >= " ++ thr
+            s <- await (\(Counter n) -> n >= 100)
+            lift$ putStrLn ("Reached, store is " ++ show s)
+            step
+
+      runStateT script rep
+      return ()
 
 mkListener :: Src HttpT -> IO (TChan (CMsg Int SetEG Counter))
 mkListener src = do

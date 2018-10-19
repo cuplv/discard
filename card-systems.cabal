@@ -12,6 +12,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:     CARD
                      , CARD.EventGraph.SetEG
+                     , CARD.Store.CA
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
@@ -46,5 +47,6 @@ executable cardr
                      , warp
                      , http-types
                      , text
+                     , containers
   hs-source-dirs:      cardr
   default-language:    Haskell2010
