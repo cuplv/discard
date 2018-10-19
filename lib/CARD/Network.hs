@@ -23,6 +23,7 @@ data CMsg i r s = BCast i (Edge r (i, Effect s))
                 | ARequest i (Conref s)
                 | AGrant i (Conref s)
                 | ARelease i
+                | UpdatesPls i
                 deriving (Generic)
 
 instance (ToJSON i, ToJSON (Cr s), ToJSON (Event r (i, Effect s))) => ToJSON (CMsg i r s) where
@@ -64,7 +65,6 @@ instance Transport HttpT where
 
 msgGetter :: (ToJSON (CMsg i r s), FromJSON (CMsg i r s)) => (CMsg i r s -> IO Bool) -> Application
 msgGetter handle request respond = do
-  putStrLn "Msg received."
   body <- strictRequestBody request
   case decode body of
     Just msg -> handle msg

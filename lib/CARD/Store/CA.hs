@@ -62,6 +62,13 @@ instance (FromJSON i, FromJSON (Cr s), FromJSON (Ef s), Ord (Ef s), Ord (Cr s)) 
 instance ToJSON (Cr (CA i s))
 instance FromJSON (Cr (CA i s))
 
+permitted :: (Ord i, Store s) => i -> Effect s -> CA i s -> Bool
+permitted i e = 
+  or 
+  . map (\(c,is) -> checkBlock c e && Set.member i is)
+  . Map.elems
+  . locks
+
 confirmed :: (Ord i) => i -> [i] -> CA i s -> Bool
 confirmed self others (CA ls _) = 
   case Map.lookup self ls of
@@ -80,3 +87,9 @@ release :: (Rep i r (CA i s) t) => RepS i r (CA i s) t ()
 release = do i <- selfId . repConfig <$> get
              emit (ef$ Release i)
              return ()
+
+safeEmit :: (Store s, Rep i r (CA i s) t) => Effect s -> RepS i r (CA i s) t ()
+safeEmit e = do i <- selfId . repConfig <$> get
+                await (permitted i e) 
+                emit (ef$ Lift e)
+                return ()

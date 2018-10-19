@@ -57,6 +57,9 @@ instance (Ord (Cr s), FromJSON (Cr s)) => FromJSON (Conref s)
 cr :: Cr s -> Conref s
 cr c = Conref (Set.singleton c)
 
+crT :: Conref s
+crT = Conref (Set.empty)
+
 (|&|) :: (Store s) => Conref s -> Conref s -> Conref s
 (|&|) (Conref c1) (Conref c2) = Conref (Set.union c1 c2)
 
@@ -87,8 +90,12 @@ instance Store Counter where
     Sub n -> Counter (s - n)
     SetTo n -> Counter n
 
-  data Cr Counter = TODO deriving (Show,Read,Eq,Ord,Generic)
-  defineConflict = undefined
+  data Cr Counter = LEQ | GEQ deriving (Show,Read,Eq,Ord,Generic)
+  defineConflict c e = case (c,e) of
+    (LEQ,Sub _) -> True
+    (GEQ,Add _) -> True
+    (_,SetTo _) -> True
+    _ -> False
 
 instance ToJSON (Ef Counter) where
   toEncoding = genericToEncoding defaultOptions
