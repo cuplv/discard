@@ -40,7 +40,7 @@ withdraw n =
                 then do safeEmit (ef$ Sub n)
                         release
                         return (Right n)
-                else return (Left "Not enough in account.")
+                else release >> return (Left "Not enough in account.")
      else return (Left "Can't withdraw less than 1.")
 
 withdrawS :: (Rep i r (CA i Counter) t) 
@@ -50,8 +50,10 @@ withdrawS = undefined
 
 current :: (Rep i r (CA i Counter) t) => RepS i r (CA i Counter) t Int
 current = do (Counter s) <- query crT
+             release
              return s
 
 currentS :: (Rep i r (CA i Counter) t) => RepS i r (CA i Counter) t Int
 currentS = do (Counter s) <- query EQV
+              release
               return s

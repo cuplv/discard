@@ -46,8 +46,10 @@ runEffect s (Effect es) = foldl' defineEffect s es
 
 data Conref s = Conref (Set (Cr s)) | EQV deriving (Generic)
 
+
 deriving instance (Store s) => Eq (Conref s)
 deriving instance (Store s) => Ord (Conref s)
+deriving instance (Show (Cr s)) => Show (Conref s)
 
 instance (ToJSON (Cr s)) => ToJSON (Conref s) where
   toEncoding = genericToEncoding defaultOptions

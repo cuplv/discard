@@ -62,9 +62,13 @@ instance (FromJSON i, FromJSON (Cr s), FromJSON (Ef s), Ord (Ef s), Ord (Cr s)) 
 instance ToJSON (Cr (CA i s))
 instance FromJSON (Cr (CA i s))
 
+initCA :: s -> CA i s
+initCA s = CA (Map.empty) s
+
 permitted :: (Ord i, Store s) => i -> Effect s -> CA i s -> Bool
-permitted i e = 
-  or 
+permitted i e =
+  not
+  . or 
   . map (\(c,is) -> checkBlock c e && Set.member i is)
   . Map.elems
   . locks
@@ -76,20 +80,35 @@ confirmed self others (CA ls _) =
     Nothing -> True
 
 
-query :: (Rep i r (CA i s) t) => Conref s -> RepS i r (CA i s) t s
+query :: (Store s, Rep i r (CA i s) t) => Conref s -> RepS i r (CA i s) t s
 query c = do conf <- repConfig <$> get
              let i = selfId conf
                  os = Map.keys (others conf)
-             emit (ef$ Request (i,c))
-             caStore <$> await (confirmed i os)
+             if c /= Conref (Set.empty)
+                then do emit (ef$ Request (i,c))
+                        caStore <$> await (confirmed i os)
+                else caStore <$> check
+
+
 
 release :: (Rep i r (CA i s) t) => RepS i r (CA i s) t ()
 release = do i <- selfId . repConfig <$> get
-             emit (ef$ Release i)
-             return ()
+             (CA ls _) <- check
+             if i `Map.member` ls
+                then emit (ef$ Release i) >> lift (putStrLn ("Released."))
+                else return ()
 
 safeEmit :: (Store s, Rep i r (CA i s) t) => Effect s -> RepS i r (CA i s) t ()
 safeEmit e = do i <- selfId . repConfig <$> get
                 await (permitted i e) 
                 emit (ef$ Lift e)
                 return ()
+
+grantAll :: (Show i, Show (Cr s), Rep i r (CA i s) t) => RepS i r (CA i s) t ()
+grantAll = do i <- selfId . repConfig <$> get
+              (CA ls _) <- check
+              let unGranted = 
+                    filter (\(ir,(_,igs)) -> i `Set.notMember` igs) 
+                    . Map.assocs 
+                    $ ls
+              mapM_ (\(ir,l) -> emit (ef$ Grant i ir) >> lift (putStrLn (show (ir,l)))) unGranted
