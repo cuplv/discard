@@ -35,6 +35,7 @@ library
                      , wai
                      , warp
                      , http-types
+                     , free
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
@@ -50,5 +51,6 @@ executable cardr
                      , http-types
                      , text
                      , containers
+                     , free
   hs-source-dirs:      cardr
   default-language:    Haskell2010

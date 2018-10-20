@@ -2,45 +2,41 @@
 
 module CARD.LQ where
 
+import Control.Monad.Free
+
 import CARD.Store
 
-data LQ s a where
-  Const :: c -> LQ s c
-  Commit :: (Store s) => Effect s -> LQ s a -> LQ s a
-  Query :: (Store s) => Conref s -> (s -> LQ s a) -> LQ s a
+
+data LQ s a = Issue (Effect s) a
+            | Query (Conref s) (s -> a)
 
 instance Functor (LQ s) where
   fmap f m = case m of
-    Const c -> Const (f c)
-    Commit e t -> Commit e (fmap f t)
-    Query c f2 -> Query c (\s -> fmap f (f2 s))
+    Issue e a -> Issue e (f a)
+    Query c a -> Query c (\s -> f (a s))
 
-instance Applicative (LQ s) where
-  pure = Const
-  (<*>) tf t = case tf of
-    Const f -> fmap f t
-    Commit e f -> Commit e (f <*> t)
-    Query c f2 -> Query c (\s -> (f2 s) <*> t)
+type Op s = Free (LQ s)
 
-instance Monad (LQ s) where
-  (>>=) t1 t2 = case t1 of
-    Const c -> t2 c
-    Commit e t3 -> Commit e (t3 >>= t2)
-    Query c f -> Query c (\s -> f s >>= t2)
+issue :: (Store s) => Effect s -> Op s ()
+issue e = Free (Issue e (Pure ()))
 
-commit :: (Store s) => Effect s -> LQ s ()
-commit e = Commit e (Const ())
+query :: (Store s) => Conref s -> Op s s
+query c = Free (Query c Pure)
 
-query :: (Store s) => Conref s -> LQ s s
-query c = Query c (\s -> Const s)
+assert :: Bool -> String -> Op s (Either String ())
+assert b s = return (if b
+                        then Right ()
+                        else Left s)
 
-dp :: Int -> LQ Counter (Either String Int)
-dp n = do commit (ef$ Add n)
+dp :: Int -> Op Counter (Either String Int)
+dp n = do assert (n > 0) "Must deposit at least 1."
+          issue (ef$ Add n)
           return (Right n)
 
-wd :: Int -> LQ Counter (Either String Int)
-wd n = do (Counter s) <- query (cr$ LEQ)
+wd :: Int -> Op Counter (Either String Int)
+wd n = do assert (n > 0) "Must withdraw at least 1."
+          (Counter s) <- query (cr$ LEQ)
           if s >= n
-             then do commit (ef$ Sub n)
+             then do issue (ef$ Sub n)
                      return (Right n)
              else return (Left "Not enough in account.")
