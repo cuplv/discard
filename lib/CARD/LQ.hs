@@ -21,7 +21,7 @@ issue e = Free (Issue e (Pure ()))
 query :: (Store s) => Conref s -> Op s s
 query c = Free (Query c Pure)
 
-assert :: Bool -> String -> Op s (Either String ())
-assert b s = return (if b
-                        then Right ()
-                        else Left s)
+assert :: Bool -> String -> Op s (Either String a) -> Op s (Either String a)
+assert b s op = if b
+                   then op
+                   else return (Left s)

@@ -1,32 +1,30 @@
+{-# LANGUAGE LambdaCase #-}
+
 module CARD.LQ.Bank where
 
 import CARD.Store
 import CARD.LQ
 
 deposit :: Int -> Op Counter (Either String Int)
-deposit n = do assert (n > 0) "Must deposit at least 1."
-               issue (ef$ Add n)
-               return (Right n)
+deposit n = assert (n > 0) "Must deposit at least 1." $ do
+  issue (ef$ Add n)
+  return (Right n)
 
 withdraw :: Int -> Op Counter (Either String Int)
-withdraw n = do assert (n > 0) "Must withdraw at least 1."
-                (Counter s) <- query (cr$ LEQ)
-                if s >= n
-                   then do issue (ef$ Sub n)
-                           return (Right n)
-                   else return (Left "Not enough in account.")
+withdraw n = assert (n > 0) "Must withdraw at least 1." $ do
+  (Counter s) <- query (cr$ LEQ)
+  if s >= n
+     then issue (ef$ Sub n) >> return (Right n)
+     else return (Left "Not enough in account.")
 
 withdrawS :: Int -> Op Counter (Either String Int)
-withdrawS n = do 
-  r <- withdraw n
-  case r of
-    Left "Not enough in account." -> do
-      (Counter s) <- query EQV
-      if s >= n
-         then do issue (ef$ Sub n)
-                 return (Right n)
-         else return (Left "Not enough in total account.")
-    other -> return other
+withdrawS n = withdraw n >>= \case
+  Left "Not enough in account." -> do
+    (Counter s) <- query EQV
+    if s >= n
+       then issue (ef$ Sub n) >> return (Right n)
+       else return (Left "Seriously, not enough in account.")
+  other -> return other
 
 current :: Op Counter Int
 current = do (Counter s) <- query crT
