@@ -1,5 +1,3 @@
-{-# LANGUAGE GADTs #-}
-
 module CARD.LQ where
 
 import Control.Monad.Free
@@ -27,16 +25,3 @@ assert :: Bool -> String -> Op s (Either String ())
 assert b s = return (if b
                         then Right ()
                         else Left s)
-
-dp :: Int -> Op Counter (Either String Int)
-dp n = do assert (n > 0) "Must deposit at least 1."
-          issue (ef$ Add n)
-          return (Right n)
-
-wd :: Int -> Op Counter (Either String Int)
-wd n = do assert (n > 0) "Must withdraw at least 1."
-          (Counter s) <- query (cr$ LEQ)
-          if s >= n
-             then do issue (ef$ Sub n)
-                     return (Right n)
-             else return (Left "Not enough in account.")

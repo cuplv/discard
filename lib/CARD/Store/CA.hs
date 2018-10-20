@@ -24,9 +24,12 @@ import Control.Monad.State
 import GHC.Generics hiding (Rep)
 import Data.Aeson
 
+import Control.Monad.Free
+
 import CARD.Store
 import CARD.Replica
 import CARD.Network
+import CARD.LQ
 
 type Locks i s = Map i (Conref s, Set i)
 
@@ -91,12 +94,14 @@ query c = do conf <- repConfig <$> get
 
 
 
-release :: (Rep i r (CA i s) t) => RepS i r (CA i s) t ()
+release :: (Store s, Rep i r (CA i s) t) => RepS i r (CA i s) t ()
 release = do i <- selfId . repConfig <$> get
              (CA ls _) <- check
-             if i `Map.member` ls
-                then emit (ef$ Release i) >> lift (putStrLn ("Released."))
-                else return ()
+             case Map.lookup i ls of
+               Just (c,_) -> if c /= crT
+                                then emit (ef$ Release i) >> return ()
+                                else return ()
+               Nothing -> return ()
 
 safeEmit :: (Store s, Rep i r (CA i s) t) => Effect s -> RepS i r (CA i s) t ()
 safeEmit e = do i <- selfId . repConfig <$> get
@@ -104,11 +109,24 @@ safeEmit e = do i <- selfId . repConfig <$> get
                 emit (ef$ Lift e)
                 return ()
 
-grantAll :: (Show i, Show (Cr s), Rep i r (CA i s) t) => RepS i r (CA i s) t ()
+grantAll :: (Rep i r (CA i s) t) => RepS i r (CA i s) t ()
 grantAll = do i <- selfId . repConfig <$> get
               (CA ls _) <- check
               let unGranted = 
                     filter (\(ir,(_,igs)) -> i `Set.notMember` igs) 
                     . Map.assocs 
                     $ ls
-              mapM_ (\(ir,l) -> emit (ef$ Grant i ir) >> lift (putStrLn (show (ir,l)))) unGranted
+              mapM_ (\(ir,l) -> emit (ef$ Grant i ir)) unGranted
+
+runOp :: (Store s, Rep i r (CA i s) t) => Op s a -> RepS i r (CA i s) t a
+runOp op = do a <- evalOp op
+              release
+              return a
+
+evalOp :: (Store s, Rep i r (CA i s) t) 
+       => Op s a 
+       -> RepS i r (CA i s) t a
+evalOp t = case t of
+  Pure a -> return a
+  Free (Issue e t') -> safeEmit e >> evalOp t'
+  Free (Query c ft') -> CARD.Store.CA.query c >>= evalOp . ft'

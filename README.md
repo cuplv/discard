@@ -54,7 +54,7 @@ value.  This must perform coordination similar to that of `wd INT`.
 
 You can edit [`./cardr/Main.hs`][2] to see how the library is used and
 make a more interesting example.  The bank operations are implemented
-in [`./lib/CARD/Store/Bank.hs`][3]
+in [`./lib/CARD/LQ/Bank.hs`][3].
 
 
 ## Alternate setup ##
@@ -74,4 +74,4 @@ Without nix, or if nix doesn't work, here's another way to set up the system.
 
 [1]: https://arxiv.org/abs/1802.08733
 [2]: ./cardr/Main.hs
-[3]: ./lib/CARD/Store/Bank.hs
+[3]: ./lib/CARD/LQ/Bank.hs

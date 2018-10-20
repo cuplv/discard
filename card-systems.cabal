@@ -13,8 +13,8 @@ library
   exposed-modules:     CARD
                      , CARD.EventGraph.SetEG
                      , CARD.Store.CA
-                     , CARD.Store.Bank
                      , CARD.LQ
+                     , CARD.LQ.Bank
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
