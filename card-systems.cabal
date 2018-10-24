@@ -15,6 +15,8 @@ library
                      , CARD.Store.CA
                      , CARD.LQ
                      , CARD.LQ.Bank
+                     , Storage.Ipfs.Types
+                     , Storage.Ipfs.Turtle
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
@@ -36,6 +38,10 @@ library
                      , warp
                      , http-types
                      , free
+                     , parsec
+                     , text
+                     , bytestring
+                     , filepath
   hs-source-dirs:      lib
   default-language:    Haskell2010
 
