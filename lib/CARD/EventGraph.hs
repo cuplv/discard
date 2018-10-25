@@ -8,7 +8,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 
 module CARD.EventGraph
-  ( Edge (edgeSet)
+  ( Edge (Edge,edgeSet)
   , unsafeMakeEdge
   , empty
   , EGB (..)

@@ -60,8 +60,8 @@ instance FromJSONKey IpfsPath where
       Right p -> return p
       Left t -> fail (Text.unpack t)
 
-data IpfsNode = IpfsNode
-  { inodeData :: Text
+data IpfsObject a = IpfsObject
+  { inodeData :: a
   , inodeLinks :: Map FilePath IpfsPath }
 
 newtype IpfsLink = IpfsLink { unpackIpfsLink :: (FilePath, IpfsPath) }
@@ -69,22 +69,21 @@ newtype IpfsLink = IpfsLink { unpackIpfsLink :: (FilePath, IpfsPath) }
 instance FromJSON IpfsLink where
   parseJSON = withObject "IpfsLink" $ \v -> do
     f <- Text.unpack <$> v .: "Name"
-    cid <- v .: "Cid"
-    hash <- cid .: "/"
+    hash <- v .: "Hash"
     return $ IpfsLink (f,IpfsPath hash)
 
 instance ToJSON IpfsLink where
   toJSON (IpfsLink (f,(IpfsPath p))) = 
     object ["Name" .= f
-           ,"Cid" .= object ["/" .= toJSON p]]
+           ,"Hash" .= toJSON p]
 
-instance FromJSON IpfsNode where
-  parseJSON = withObject "IpfsNode" $ \v -> do
-    ls <- v .: "links" :: Parser [IpfsLink]
-    d <- v .: "data"
-    return (IpfsNode d (Map.fromList . map unpackIpfsLink $ ls))
+instance (FromJSON a) => FromJSON (IpfsObject a) where
+  parseJSON = withObject "IpfsObject" $ \v -> do
+    ls <- v .: "Links" :: Parser [IpfsLink]
+    d <- v .: "Data"
+    return (IpfsObject d (Map.fromList . map unpackIpfsLink $ ls))
 
-instance ToJSON IpfsNode where
-  toJSON (IpfsNode d ls) = 
-    object ["data" .= toJSON d
-           ,"links" .= array (toJSON <$> IpfsLink <$> Map.toList ls)]
+instance (ToJSON a) => ToJSON (IpfsObject a) where
+  toJSON (IpfsObject d ls) = 
+    object ["Data" .= toJSON d
+           ,"Links" .= array (toJSON <$> IpfsLink <$> Map.toList ls)]

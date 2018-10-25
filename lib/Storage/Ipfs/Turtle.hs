@@ -20,6 +20,8 @@ module Storage.Ipfs.Turtle
   , get
   , Storage.Ipfs.Turtle.cat
   , pin
+  , getObject
+  , putObject
 
   -- * Helpful re-exports
   , throwError
@@ -39,7 +41,7 @@ import Turtle hiding (cat,Parser,FilePath)
 import qualified Turtle
 import qualified Turtle.Bytes as TB
 import Data.ByteString (ByteString)
-import Data.ByteString.Lazy (toStrict)
+import Data.ByteString.Lazy (toStrict,fromStrict)
 import Text.Parsec (Parsec)
 import qualified Text.Parsec as P
 import Data.Map (Map)
@@ -158,22 +160,19 @@ pin :: [IpfsPath] -> IpfsME ()
 pin ps = ipfs (["pin","add","--progress"] ++ map fIpfsPath ps) empty 
          >> return ()
 
--- getNode :: IpfsPath -> IpfsME IpfsNode
--- getNode p = do 
---   bs <- ipfs ["dag","get",fIpfsPath p] empty
---   case decodeEither' bs of
---     Right n -> return n
---     Left e -> throwError (Text.pack . show $ e)
+putObject :: (ToJSON a) => IpfsObject a -> IpfsME IpfsPath
+putObject (IpfsObject d links) = do
+  basePath <- ipfst ["object","new"] empty
+  let addLink root (n,IpfsPath p) = 
+        ipfst ["object","patch","add-link",root,Text.pack n,p] empty
+  let apData = return (encode d)
+  path' <- foldM addLink basePath (Map.toList links)
+  p <- ipfst ["object","patch","append-data",path'] apData
+  return (IpfsPath p)
 
--- -- | Put a node (warning: this doesn not put the correct size in the
--- -- node)
--- putNode :: IpfsNode -> IpfsME IpfsPath
--- putNode n = do
---   let bs = toStrict $ A.encode n
---   res <- Text.stripEnd <$> ipfst ["dag","put","--format","protobuf"] (return bs)
---   return (IpfsPath res)
-
--- -- | Wrap an ipfs node in a directory
--- nest :: IpfsPath -> FilePath -> IpfsME IpfsPath
--- nest p f = do 
---   putNode (IpfsNode "CAE=" (Map.fromList [(f,p)]))
+getObject :: (FromJSON a) => IpfsPath -> IpfsME (IpfsObject a)
+getObject (IpfsPath p) = do
+  r <- A.eitherDecode . fromStrict <$> ipfs ["object","get",p] empty
+  case r of
+    Right obj -> return obj
+    Left msg -> throwError (Text.pack msg)
