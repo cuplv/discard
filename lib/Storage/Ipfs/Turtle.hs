@@ -13,6 +13,7 @@ module Storage.Ipfs.Turtle
   , l2
   , IpfsApi
   , mkIpfsApi
+  , defIpfsApi
   , ipfs
   , ipfst
   , addf
@@ -29,6 +30,7 @@ module Storage.Ipfs.Turtle
 
   ) where
 
+import System.IO
 import Data.Yaml
 import qualified Data.Aeson as A
 import Data.Aeson.Types
@@ -160,19 +162,20 @@ pin :: [IpfsPath] -> IpfsME ()
 pin ps = ipfs (["pin","add","--progress"] ++ map fIpfsPath ps) empty 
          >> return ()
 
-putObject :: (ToJSON a) => IpfsObject a -> IpfsME IpfsPath
+putObject :: IpfsObject -> IpfsME IpfsPath
 putObject (IpfsObject d links) = do
-  basePath <- ipfst ["object","new"] empty
+  basePath <- Text.strip <$> ipfst ["object","new"] empty
   let addLink root (n,IpfsPath p) = 
-        ipfst ["object","patch","add-link",root,Text.pack n,p] empty
-  let apData = return (encode d)
+        Text.strip 
+        <$> ipfst ["object","patch","add-link",root,Text.pack n,p] empty
+  let apData = return (encodeUtf8 d)
   path' <- foldM addLink basePath (Map.toList links)
-  p <- ipfst ["object","patch","append-data",path'] apData
+  p <- Text.strip <$> ipfst ["object","patch","append-data",path'] apData
   return (IpfsPath p)
 
-getObject :: (FromJSON a) => IpfsPath -> IpfsME (IpfsObject a)
+getObject :: IpfsPath -> IpfsME IpfsObject
 getObject (IpfsPath p) = do
-  r <- A.eitherDecode . fromStrict <$> ipfs ["object","get",p] empty
-  case r of
+  t <- fromStrict <$> ipfs ["object","get",p] empty
+  case A.eitherDecode t of
     Right obj -> return obj
     Left msg -> throwError (Text.pack msg)

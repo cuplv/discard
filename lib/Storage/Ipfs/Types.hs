@@ -13,7 +13,6 @@ import Text.Parsec (Parsec)
 import qualified Text.Parsec as P
 import Data.Map (Map)
 import qualified Data.Map as Map
--- import System.FilePath
 
 newtype IpfsPath = IpfsPath {ipfsPath :: Text} deriving (Eq,Ord)
 
@@ -60,8 +59,8 @@ instance FromJSONKey IpfsPath where
       Right p -> return p
       Left t -> fail (Text.unpack t)
 
-data IpfsObject a = IpfsObject
-  { inodeData :: a
+data IpfsObject = IpfsObject
+  { inodeData :: Text
   , inodeLinks :: Map FilePath IpfsPath }
 
 newtype IpfsLink = IpfsLink { unpackIpfsLink :: (FilePath, IpfsPath) }
@@ -77,13 +76,13 @@ instance ToJSON IpfsLink where
     object ["Name" .= f
            ,"Hash" .= toJSON p]
 
-instance (FromJSON a) => FromJSON (IpfsObject a) where
+instance FromJSON IpfsObject where
   parseJSON = withObject "IpfsObject" $ \v -> do
     ls <- v .: "Links" :: Parser [IpfsLink]
     d <- v .: "Data"
     return (IpfsObject d (Map.fromList . map unpackIpfsLink $ ls))
 
-instance (ToJSON a) => ToJSON (IpfsObject a) where
+instance ToJSON IpfsObject where
   toJSON (IpfsObject d ls) = 
     object ["Data" .= toJSON d
            ,"Links" .= array (toJSON <$> IpfsLink <$> Map.toList ls)]

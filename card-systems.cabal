@@ -61,3 +61,7 @@ executable cardr
                      , free
   hs-source-dirs:      cardr
   default-language:    Haskell2010
+
+  -- This bit is required for turtle sub-processes to not hang
+  -- sometimes?
+  ghc-options:       -threaded

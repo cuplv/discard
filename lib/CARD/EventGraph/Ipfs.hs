@@ -11,6 +11,8 @@ import Data.Aeson
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
+import Data.ByteString.Lazy (fromStrict,toStrict)
+import Data.Text.Encoding (encodeUtf8,decodeUtf8)
 import Data.Text (Text)
 import qualified Data.Text as Text
 import qualified Turtle
@@ -35,14 +37,18 @@ nameHist =
 
 instance (Ord d, ToJSON d, FromJSON d) => EG IpfsEG d IO where
   event (IpfsEG api) hist d = do 
-    res <- withApi api (putObject (IpfsObject d (nameHist hist)))
+    res <- withApi api (putObject (IpfsObject (decodeUtf8 (toStrict $ encode d)) (nameHist hist)))
     case res of
       Right p -> return $ IpfsEv p
+      Left s -> Turtle.die s
   unpack (IpfsEG api) (IpfsEv path) = do
     res <- withApi api (getObject path)
     case res of
       Right (IpfsObject d links) -> 
-        return (d, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
+        case eitherDecode (fromStrict $ encodeUtf8 d) of
+          Right dt -> return (dt, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
+          Left e -> Turtle.die (Text.pack e)
+      Left s -> Turtle.die s
   vis (IpfsEG api) (IpfsEv (IpfsPath p1)) (IpfsEv (IpfsPath p2)) = do
     res <- withApi api $ ipfst ["refs","--recursive",p2] Turtle.empty
     case res of

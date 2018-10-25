@@ -22,10 +22,15 @@ import CARD
 import CARD.EventGraph.SetEG
 import CARD.Store.CA
 import CARD.LQ.Bank
+import CARD.EventGraph.Ipfs
+import Storage.Ipfs.Turtle (defIpfsApi)
 
 main :: IO ()
 main = do
   args <- getArgs
+  mapi <- defIpfsApi
+  let egr = case mapi of
+              Right api -> IpfsEG api
   case args of
     [idA,destA,idB,destB,selfId,selfPort] -> do 
       let src = mkSrc $ read selfPort
@@ -37,12 +42,13 @@ main = do
                    src 
                    chan 
                    (initCA (Counter 0)) 
-                   SetEG
+                   egr
                    (Map.fromList [(read idA, destA')
-                                 ,(read idB, destB')]) :: RepConfig Int SetEG (CA Int Counter) HttpT
+                                 ,(read idB, destB')]) :: RepConfig Int IpfsEG (CA Int Counter) HttpT
           rep = RepRT conf (initCA (Counter 0)) empty
           script = do
             grantAll
+            liftIO $ putStr "> " >> hFlush stdout
             cmd <- words <$> lift getLine
             case cmd of
               ["dp",n] -> do r <- runOp $ deposit (read n)
@@ -60,7 +66,7 @@ main = do
       runStateT script rep
       return ()
 
-mkListener :: Src HttpT -> IO (TChan (CMsg Int SetEG (CA Int Counter)))
+mkListener :: Src HttpT -> IO (TChan (CMsg Int IpfsEG (CA Int Counter)))
 mkListener src = do
   chan <- atomically newTChan
   forkIO (listen src (\m -> atomically (writeTChan chan m) >> return True))
