@@ -45,7 +45,7 @@ main = do
                    egr
                    (Map.fromList [(read idA, destA')
                                  ,(read idB, destB')]) :: RepConfig Int IpfsEG (CA Int Counter) HttpT
-          rep = RepRT conf (initCA (Counter 0)) empty
+          rep = RepRT conf (initCA (Counter 0)) empty Map.empty
           script = do
             grantAll
             liftIO $ putStr "> " >> hFlush stdout

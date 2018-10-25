@@ -21,6 +21,8 @@ module CARD.EventGraph
   , pop
   , edge
   , foldg
+  , folds
+  , CacheResult (..)
   , serialize
   ) where
 
@@ -28,6 +30,8 @@ import Control.Monad (foldM,filterM)
 import Data.Foldable (foldl')
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Control.Monad.Trans
 import GHC.Generics
 import Data.Aeson
@@ -139,6 +143,45 @@ edge r (Edge s) = mapM (unpack r) (Set.toList s)
 -- | Fold over the elements of an event graph
 foldg :: (EG r d m) => r -> (s -> d -> s) -> s -> Edge r d -> m s
 foldg r f s g = foldl' f s <$> serialize r g
+
+data CacheResult = Hit | Partial | Miss deriving (Show,Eq,Ord)
+
+folds :: (Ord s, EG r d m) 
+      => r 
+      -> (d -> s -> s) 
+      -> s 
+      -> Map (s, Edge r d) s
+      -> Edge r d 
+      -> m (s,CacheResult)
+folds r f s m g = do 
+  case Map.lookup (s,g) m of
+    (Just smr) -> return (smr,Hit)
+    Nothing -> do
+     (s',res) <- foldsr r f s m g
+     return (s',case res of
+                  True -> Partial
+                  False -> Miss)
+
+foldsr :: (Ord s, EG r d m) 
+       => r 
+       -> (d -> s -> s) 
+       -> s 
+       -> Map (s, Edge r d) s
+       -> Edge r d 
+       -> m (s,Bool)
+foldsr r f s m g = do 
+  -- Try summaries
+  case Map.lookup (s,g) m of
+    Just smr -> return (smr,True)
+    Nothing -> do
+      -- Are we finished?
+      me <- pop r g
+      case me of
+        Nothing -> return (s,False)
+        Just (d,g') -> do
+          (s',res) <- foldsr r f s m g'
+          return (f d s', res)
+
 
 -- | Totally order the elements of an event graph, using their
 -- arbitrary ordering to resolve parallel events.

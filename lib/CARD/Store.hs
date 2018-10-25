@@ -11,6 +11,8 @@ module CARD.Store where
 import Data.Foldable (foldl')
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Map (Map)
+import qualified Data.Map as Map
 import GHC.Generics
 import Data.Aeson
 
@@ -79,6 +81,13 @@ appendAs i r e = append r (i,e)
 evalHist :: (Store s, EG r (i, Effect s) m) => r -> s -> Hist i r s -> m s
 evalHist res s0 = foldg res (\s (_,e) -> runEffect s e) s0
 
+evalHistS :: (Ord s, Store s, EG r (i, Effect s) m) 
+          => r 
+          -> s 
+          -> Map (s, Edge r (i, Effect s)) s
+          -> Hist i r s 
+          -> m (s,CacheResult)
+evalHistS res s0 = folds res (\(_,e) s -> runEffect s e) s0
 
 ------------------------------------------------------------------------
 -- Simple implementations

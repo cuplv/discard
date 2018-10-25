@@ -28,11 +28,12 @@ data RepConfig i r s t = RepConfig
 data RepRT i r s t = RepRT
   { repConfig :: RepConfig i r s t
   , initVal :: s
-  , repHist :: Hist i r s }
+  , repHist :: Hist i r s
+  , summs   :: Map (s, Hist i r s) s }
 
-class (Eq i, Ord i, Transport t, Store s, Carries t i r s, EG r (i, Effect s) (Res t), Res t ~ IO) => Rep i r s t
+class (Ord s, Eq i, Ord i, Transport t, Store s, Carries t i r s, EG r (i, Effect s) (Res t), Res t ~ IO) => Rep i r s t
 
-instance (Eq i, Ord i, Transport t, Store s, Carries t i r s, EG r (i, Effect s) (Res t), Res t ~ IO) => Rep i r s t
+instance (Ord s, Eq i, Ord i, Transport t, Store s, Carries t i r s, EG r (i, Effect s) (Res t), Res t ~ IO) => Rep i r s t
 
 type RepS i r s t = StateT (RepRT i r s t) (Res t)
 
@@ -42,14 +43,14 @@ bcast' (RepConfig i _ _ _ _ others) hist = do
   Map.foldl' (\m dest -> m >> send dest msg) (return ()) others
 
 bcast :: (Rep i r s t) => RepS i r s t ()
-bcast = do (RepRT conf _ hist) <- get
+bcast = do (RepRT conf _ hist _) <- get
            lift$ bcast' conf hist
 
 emit' :: (Rep i r s t) => RepRT i r s t -> Effect s -> Res t (RepRT i r s t)
-emit' (RepRT conf iv hist) e = do
+emit' (RepRT conf iv hist summs) e = do
   hist' <- appendAs (selfId conf) (graphResolver conf) e hist
   bcast' conf hist'
-  return (RepRT conf iv hist')
+  return (RepRT conf iv hist' summs)
 
 emit :: (Rep i r s t) => Effect s -> RepS i r s t (Hist i r s)
 emit e = do rep <- get
@@ -58,7 +59,7 @@ emit e = do rep <- get
             return (repHist rep')
 
 update' :: (Rep i r s t) => Bool -> RepRT i r s t -> Res t (RepRT i r s t)
-update' wait (RepRT conf iv hist1) = do
+update' wait (RepRT conf iv hist1 summs) = do
   let listen = do msg <- atomically $ readTChan (msgs conf)
                   case msg of
                     BCast _ h -> ([h] ++) <$> listenMore
@@ -72,20 +73,30 @@ update' wait (RepRT conf iv hist1) = do
                  then listen
                  else listenMore
   hist2 <- foldM (merge (graphResolver conf)) hist1 newHists
-  return $ RepRT conf iv hist2
+  return $ RepRT conf iv hist2 summs
 
 check :: (Rep i r s t) => RepS i r s t s
 check = do checkH
-           (RepRT conf iv hist) <- get
-           lift$ evalHist (graphResolver conf) iv hist
+           (RepRT conf iv hist summs) <- get
+           (s,res) <- lift$ evalHistS (graphResolver conf) iv summs hist
+           lift $ print res
+           case res of
+             Hit -> return s
+             _ -> do put (RepRT conf iv hist (Map.insert (initStore conf,hist) s summs))
+                     return s
 
 -- | Merge in the next broadcast from another replica and return the
 -- updated state.  If more than one unseen broadcasts have arrived,
 -- they will all be merged.
 update :: (Rep i r s t) => RepS i r s t s
 update = do updateH
-            (RepRT conf iv hist) <- get
-            lift$ evalHist (graphResolver conf) iv hist
+            (RepRT conf iv hist summs) <- get
+            (s,res) <- lift$ evalHistS (graphResolver conf) iv summs hist
+            lift $ print res
+            case res of
+              Hit -> return s
+              _ -> do put (RepRT conf iv hist (Map.insert (initStore conf,hist) s summs))
+                      return s
 
 checkH :: (Rep i r s t) => RepS i r s t (Hist i r s)
 checkH = do rep <- get
