@@ -18,6 +18,7 @@ library
                      , CARD.LQ.Bank
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
+                     , Storage.Ipfs.Http
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store

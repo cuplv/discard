@@ -13,6 +13,35 @@ import Text.Parsec (Parsec)
 import qualified Text.Parsec as P
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Monad.Except
+import Control.Monad.Reader
+
+-- | The primary monad for interacting with IPFS processes,
+-- incorporating an IPFS API connection and exception handling.
+--
+-- Basic usage:
+--
+-- > getData :: IO (Either Text ByteString)
+-- > getData = withApi' "/ip4/127.0.0.1/tcp/5001" $ do
+-- >   mainPath <- liftEither $ mkIpfsPath "/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
+-- >   let subPath = fromText "readme"
+-- >   cat mainPath subPath
+type IpfsME = ExceptT Text IpfsM
+
+l0 :: IpfsME a -> IpfsME a
+l0 = id
+
+l1 :: IpfsM a -> IpfsME a
+l1 = lift
+
+l2 :: IO a -> IpfsME a
+l2 = lift.lift
+
+
+data IpfsApi = DefIpfsApi | IpfsApi Text deriving (Eq,Ord)
+
+type IpfsM = ReaderT IpfsApi IO
+
 
 newtype IpfsPath = IpfsPath {ipfsPath :: Text} deriving (Eq,Ord)
 
@@ -62,6 +91,19 @@ instance FromJSONKey IpfsPath where
 data IpfsObject = IpfsObject
   { inodeData :: Text
   , inodeLinks :: Map FilePath IpfsPath }
+  deriving (Show,Eq,Ord)
+
+objData :: Text -> IpfsObject
+objData t = IpfsObject t mempty
+
+objLink :: FilePath -> IpfsPath -> IpfsObject
+objLink name ref = IpfsObject mempty (Map.insert name ref mempty)
+
+instance Semigroup IpfsObject where
+  (<>) (IpfsObject d1 ls1) (IpfsObject d2 ls2) = IpfsObject (d1<>d2) (ls1<>ls2)
+
+instance Monoid IpfsObject where
+  mempty = IpfsObject mempty mempty
 
 newtype IpfsLink = IpfsLink { unpackIpfsLink :: (FilePath, IpfsPath) }
 

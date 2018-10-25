@@ -51,53 +51,6 @@ import qualified Data.Map as Map
 
 import Storage.Ipfs.Types
 
--- | The primary monad for interacting with IPFS processes,
--- incorporating an IPFS API connection and exception handling.
---
--- Basic usage:
---
--- > getData :: IO (Either Text ByteString)
--- > getData = withApi' "/ip4/127.0.0.1/tcp/5001" $ do
--- >   mainPath <- liftEither $ mkIpfsPath "/ipfs/QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG"
--- >   let subPath = fromText "readme"
--- >   cat mainPath subPath
-type IpfsME = ExceptT Text IpfsM
-
-l0 :: IpfsME a -> IpfsME a
-l0 = id
-
-l1 :: IpfsM a -> IpfsME a
-l1 = lift
-
-l2 :: IO a -> IpfsME a
-l2 = lift.lift
-
-lIpfsPath :: IpfsPath -> Line
-lIpfsPath = unsafeTextToLine . fIpfsPath
-
-fipp = fIpfsPath
-fippFP = fromText . fipp
-
-
-data IpfsApi = DefIpfsApi | IpfsApi Text deriving (Eq,Ord)
-
-type IpfsM = ReaderT IpfsApi IO
-
--- | Create an API from a 'Text' URI, checking that it is reachable
-mkIpfsApi :: Text -> IO (Either Text IpfsApi)
-mkIpfsApi api = do 
-  (c,_,err) <- procStrictWithErr "ipfs" ["--api",api,"id"] empty
-  return (case c of
-            ExitFailure _ -> Left err
-            ExitSuccess -> Right (IpfsApi api))
-
--- | Create a handle for the default API, checking that it is reachable
-defIpfsApi :: IO (Either Text IpfsApi)
-defIpfsApi = do (c,_,err) <- procStrictWithErr "ipfs" ["id"] empty
-                return (case c of
-                          ExitFailure _ -> Left err
-                          ExitSuccess -> Right DefIpfsApi)
-
 withApi :: IpfsApi -> IpfsME a -> IO (Either Text a)
 withApi api m = runReaderT (runExceptT m) api
 
@@ -123,6 +76,29 @@ hdie m = do r <- m
             case r of
               Right a -> return a
               Left e -> liftIO$ die e
+
+-- | Create an API from a 'Text' URI, checking that it is reachable
+mkIpfsApi :: Text -> IO (Either Text IpfsApi)
+mkIpfsApi api = do 
+  (c,_,err) <- procStrictWithErr "ipfs" ["--api",api,"id"] empty
+  return (case c of
+            ExitFailure _ -> Left err
+            ExitSuccess -> Right (IpfsApi api))
+
+-- | Create a handle for the default API, checking that it is reachable
+defIpfsApi :: IO (Either Text IpfsApi)
+defIpfsApi = do (c,_,err) <- procStrictWithErr "ipfs" ["id"] empty
+                return (case c of
+                          ExitFailure _ -> Left err
+                          ExitSuccess -> Right DefIpfsApi)
+
+
+lIpfsPath :: IpfsPath -> Line
+lIpfsPath = unsafeTextToLine . fIpfsPath
+
+fipp = fIpfsPath
+fippFP = fromText . fipp
+
 
 ipfs :: [Text] -> Shell ByteString -> IpfsME ByteString
 ipfs args input = do 
