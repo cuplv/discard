@@ -79,7 +79,7 @@ check :: (Rep i r s t) => RepS i r s t s
 check = do checkH
            (RepRT conf iv hist summs) <- get
            (s,res) <- lift$ evalHistS (graphResolver conf) iv summs hist
-           lift $ print res
+           -- lift $ print res
            case res of
              Hit -> return s
              _ -> do put (RepRT conf iv hist (Map.insert (initStore conf,hist) s summs))
@@ -92,7 +92,7 @@ update :: (Rep i r s t) => RepS i r s t s
 update = do updateH
             (RepRT conf iv hist summs) <- get
             (s,res) <- lift$ evalHistS (graphResolver conf) iv summs hist
-            lift $ print res
+            -- lift $ print res
             case res of
               Hit -> return s
               _ -> do put (RepRT conf iv hist (Map.insert (initStore conf,hist) s summs))

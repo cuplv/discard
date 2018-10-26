@@ -21,8 +21,13 @@ Next, make sure you can build the project.  If you have the
     $ cabal build
 
 The current demo executable is a simple conflict-aware bank account,
-in which replicas communicate via http.  To try it, open three
-terminals, and run the following:
+in which replicas announce updates via http and store their history in
+IPFS.  To try it, first make sure there is an [IPFS daemon][4] running
+with it's API on port `5001` (the default).
+
+    $ ipfs daemon --init
+
+Then, open three terminals, and run the following:
 
     (term 1)$ cabal run -- \
         0 http://localhost:45550/ \
@@ -75,3 +80,4 @@ Without nix, or if nix doesn't work, here's another way to set up the system.
 [1]: https://arxiv.org/abs/1802.08733
 [2]: ./cardr/Main.hs
 [3]: ./lib/CARD/LQ/Bank.hs
+[4]: https://docs.ipfs.io/introduction/install/

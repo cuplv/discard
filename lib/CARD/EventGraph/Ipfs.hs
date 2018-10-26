@@ -18,11 +18,11 @@ import qualified Data.Text as Text
 import qualified Turtle
 
 import Storage.Ipfs.Types
-import Storage.Ipfs.Turtle
+import Storage.Ipfs.Http
 
 import CARD.EventGraph
 
-newtype IpfsEG = IpfsEG IpfsApi deriving (Eq,Ord)
+newtype IpfsEG = IpfsEG IpfsHttp
 
 instance EGB IpfsEG where
   data Event IpfsEG d = IpfsEv IpfsPath deriving (Eq,Ord)
@@ -37,25 +37,17 @@ nameHist =
 
 instance (Ord d, ToJSON d, FromJSON d) => EG IpfsEG d IO where
   event (IpfsEG api) hist d = do 
-    res <- withApi api (putObject (IpfsObject (decodeUtf8 (toStrict $ encode d)) (nameHist hist)))
-    case res of
-      Right p -> return $ IpfsEv p
-      Left s -> Turtle.die s
+    IpfsEv <$> put api (IpfsObject (decodeUtf8 . toStrict . encode $ d) (nameHist hist))
   unpack (IpfsEG api) (IpfsEv path) = do
-    res <- withApi api (getObject path)
-    case res of
-      Right (IpfsObject d links) -> 
-        case eitherDecode (fromStrict $ encodeUtf8 d) of
-          Right dt -> return (dt, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
-          Left e -> Turtle.die (Text.pack e)
-      Left s -> Turtle.die s
-  vis (IpfsEG api) (IpfsEv (IpfsPath p1)) (IpfsEv (IpfsPath p2)) = do
-    res <- withApi api $ ipfst ["refs","--recursive",p2] Turtle.empty
-    case res of
-      Right t -> return (elem p1 . Text.lines $ t)
+    (IpfsObject d links) <- get api path
+    case eitherDecode (fromStrict $ encodeUtf8 d) of
+      Right dt -> return (dt, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
+      Left e -> Turtle.die (Text.pack e)
+  vis (IpfsEG api) (IpfsEv p1) (IpfsEv p2) = do
+    elem p1 <$> refs api True p2
 
 instance (ToJSON d) => ToJSON (Event IpfsEG d) where
   toJSON (IpfsEv path) = toJSON path
-  
+
 instance (Ord d, FromJSON d) => FromJSON (Event IpfsEG d) where
   parseJSON v = IpfsEv <$> parseJSON v

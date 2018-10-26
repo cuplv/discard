@@ -60,6 +60,7 @@ executable cardr
                      , text
                      , containers
                      , free
+                     , time
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 

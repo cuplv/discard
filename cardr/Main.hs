@@ -23,12 +23,15 @@ import CARD.EventGraph.SetEG
 import CARD.Store.CA
 import CARD.LQ.Bank
 import CARD.EventGraph.Ipfs
-import Storage.Ipfs.Turtle (defIpfsApi)
+import Storage.Ipfs.Http (mkIpfsHttp)
 
 main :: IO ()
-main = do
+main = reps
+
+reps :: IO ()
+reps = do
   args <- getArgs
-  mapi <- defIpfsApi
+  mapi <- Right <$> mkIpfsHttp "localhost" "5001"
   let egr = case mapi of
               Right api -> IpfsEG api
   case args of
