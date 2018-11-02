@@ -1,0 +1,20 @@
+- name: alpha
+  port: 23001
+
+- name: beta
+  port: 23002
+
+- name: epsilon
+  port: 23003
+
+- name: gamma
+  port: 23004
+
+- name: rho
+  port: 23005
+
+- name: nu
+  port: 23006
+
+- name: lambda
+  port: 23007

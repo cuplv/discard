@@ -46,6 +46,7 @@ library
                      , text
                      , bytestring
                      , filepath
+                     , random
   hs-source-dirs:      lib
   default-language:    Haskell2010
 

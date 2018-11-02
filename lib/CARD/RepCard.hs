@@ -17,12 +17,16 @@ module CARD.RepCard
 
   ) where
 
+import Control.Applicative ((<|>))
+import Control.Monad
 import Control.Monad.State
 import Control.Monad.Except
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Concurrent (forkIO)
+import GHC.Conc (forkIO,registerDelay,readTVar,TVar,threadDelay)
 import Control.Concurrent.STM hiding (check)
+import qualified Control.Concurrent.STM as STM
+import System.Random
 
 import CARD.CvRDT
 import CARD.Network
@@ -41,7 +45,9 @@ data Manager i r s = Manager
   , manId :: i
   , manOthers :: [i]
   , manResult :: TMVar Bool
-  , manJob :: Maybe (Job s) }
+  , manJob :: Maybe (Job s)
+  , manEmitTimeout :: Maybe (TVar Bool)
+  , manRand :: StdGen }
 
 type ManM i r s k t = StateT (Manager i r s) (CoreM ((),r) (Locks i s, Hist i r s) k t)
 
@@ -79,7 +85,8 @@ initManager i os ds r s0 = do
   jobQueue <- lstm newTQueue
   resultBox <- lstm newEmptyTMVar
   latestState <- lstm $ newTVar s0
-  let manager = Manager jobQueue i os resultBox Nothing
+  rand <- getStdGen
+  let manager = Manager jobQueue i os resultBox Nothing Nothing rand
       onUp = upWithSumms latestState ((),r) s0
 
   forkIO $ do
@@ -95,21 +102,45 @@ managerLoop = do
   others <- manOthers <$> get
   inbox <- manInbox <$> get
   outbox <- manResult <$> get
-  
+  timeoutVar <- manEmitTimeout <$> get
+
   let succeed = do lstm $ putTMVar outbox True
                    modify (\m -> m {manJob = Nothing})
+      failJob = do lstm $ putTMVar outbox False
+                   modify (\m -> m {manJob = Nothing})
+
+      timeout :: STM (Maybe a)
+      timeout = case timeoutVar of
+        Just tv -> const Nothing <$> (STM.check <=< readTVar) tv
+        Nothing -> const Nothing <$> STM.check False
+      
+      setTimeout :: (MonadIO (Res t)) => ManM i r s k t ()
+      setTimeout = do rand <- manRand <$> get
+                      let (time,rand') = randomR (200000,400000) rand -- 0.2s to 0.4s
+                      modify (\m -> m {manRand = rand'})
+                      tv <- liftIO $ registerDelay time
+                      modify (\m -> m {manEmitTimeout = Just tv})
+
+      cancelTimeout :: (MonadIO (Res t)) => ManM i r s k t ()
+      cancelTimeout = modify (\m -> m {manEmitTimeout = Nothing})
 
   -- Sort newest message
-  lstm (readTQueue inbox) >>= \case
-    Right j -> modify (\m -> m {manJob = Just j})
-    Left (BCast s) -> lift (incorp s) >> return ()
+  lstm (Just <$> readTQueue inbox <|> timeout) >>= \case
+    Just (Right j) -> do modify (\m -> m {manJob = Just j})
+                         case j of
+                           Emit _ -> setTimeout
+                           _ -> return ()
+    Just (Left (BCast s)) -> lift (incorp s) >> return ()
+    Nothing -> failJob -- Emit timeout has occured
 
   -- Try to finish job
   (manJob <$> get) >>= \case
     Just (Emit e) -> do
       locks <- fst <$> lift check
       if permitted i e locks
-         then lift (emitSndOn (append r2 (i,e))) >> succeed
+         then do modify (\m -> m {manEmitTimeout = Nothing})
+                 lift (emitSndOn (append r2 (i,e)))
+                 succeed
          else return ()
     Just (Request c) -> do 
       locks <- fst <$> lift check
@@ -156,7 +187,11 @@ runOp jq rv sv t =
                       else return (Right a)
          (evalJobQueue ctx) Release
          (evalJobResult ctx)
-         return result
+         case result of
+           Left _ -> do putStrLn "Failed, retrying."
+                        threadDelay 200000
+                        runOp jq rv sv t
+           r -> return r
 
 data Eval s = Eval
   { evalEffect :: Effect s
