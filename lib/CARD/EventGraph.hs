@@ -36,6 +36,8 @@ import Control.Monad.Trans
 import GHC.Generics
 import Data.Aeson
 
+import CARD.CvRDT
+
 -- | The "edge set" defining an event graph.  The edge set is the set
 -- of "latest" events, or those which do not have any outgoing edges
 -- in the graph.  This edge is not a single event because events in
@@ -115,11 +117,15 @@ vis' :: (EG r d m) => r -> Event r d -> Edge r d -> m Bool
 vis' r e (Edge s) = orM (vis r e) (Set.toList s)
 
 -- | Merge two event graphs (which may have common prefixes)
-merge :: (EG r d m) => r -> Edge r d -> Edge r d -> m (Edge r d)
-merge r g1@(Edge s1) g2@(Edge s2) = do 
+mergeEG :: (EG r d m) => r -> Edge r d -> Edge r d -> m (Edge r d)
+mergeEG r g1@(Edge s1) g2@(Edge s2) = do 
   us1 <- filterM (\e -> not <$> (vis' r e g2)) (Set.toList s1)
   us2 <- filterM (\e -> not <$> (vis' r e g1)) (Set.toList s2)
   return (Edge (Set.union (Set.fromList us1) (Set.fromList us2)))
+
+instance (EG r d m) => CvRDT r (Edge r d) m where
+  merge = mergeEG
+  cvempty _ = return empty
 
 setLast :: Set a -> Maybe (a, Set a)
 setLast xs = let (as,bs) = Set.splitAt (Set.size xs - 1) xs
@@ -132,7 +138,7 @@ setLast xs = let (as,bs) = Set.splitAt (Set.size xs - 1) xs
 pop :: (EG r d m) => r -> Edge r d -> m (Maybe (d, Edge r d))
 pop r (Edge s) = mayMap f (setLast s)
   where f (e,es1) = do (d,es2) <- unpack r e
-                       es3 <- merge r (Edge es1) es2
+                       es3 <- mergeEG r (Edge es1) es2
                        return (d,es3)
 
 -- | Unpack all events in an edge set, returning them in their
@@ -150,11 +156,11 @@ folds :: (Ord s, EG r d m)
       => r 
       -> (d -> s -> s) 
       -> s 
-      -> Map (s, Edge r d) s
+      -> Map (Edge r d) s
       -> Edge r d 
       -> m (s,CacheResult)
 folds r f s m g = do 
-  case Map.lookup (s,g) m of
+  case Map.lookup g m of
     (Just smr) -> return (smr,Hit)
     Nothing -> do
      (s',res) <- foldsr r f s m g
@@ -166,12 +172,12 @@ foldsr :: (Ord s, EG r d m)
        => r 
        -> (d -> s -> s) 
        -> s 
-       -> Map (s, Edge r d) s
+       -> Map (Edge r d) s
        -> Edge r d 
        -> m (s,Bool)
 foldsr r f s m g = do 
   -- Try summaries
-  case Map.lookup (s,g) m of
+  case Map.lookup g m of
     Just smr -> return (smr,True)
     Nothing -> do
       -- Are we finished?

@@ -8,6 +8,7 @@
 
 module CARD.Network where
 
+import Control.Exception (catch)
 import Control.Concurrent.STM
 import Data.Aeson
 import qualified Network.HTTP.Client as Client
@@ -16,29 +17,28 @@ import Network.Wai.Handler.Warp
 import GHC.Generics
 import Network.HTTP.Types
 
-import CARD.Store
-import CARD.EventGraph
+-- data CMsg i r s = BCast i (Edge r (i, Effect s))
+--                 | ARequest i (Conref s)
+--                 | AGrant i (Conref s)
+--                 | ARelease i
+--                 | UpdatesPls i
+--                 deriving (Generic)
 
-data CMsg i r s = BCast i (Edge r (i, Effect s))
-                | ARequest i (Conref s)
-                | AGrant i (Conref s)
-                | ARelease i
-                | UpdatesPls i
-                deriving (Generic)
+data BMsg s = BCast s deriving (Generic)
 
-instance (ToJSON i, ToJSON (Cr s), ToJSON (Event r (i, Effect s))) => ToJSON (CMsg i r s) where
+instance (ToJSON s) => ToJSON (BMsg s) where
   toEncoding = genericToEncoding defaultOptions
 
-instance (FromJSON i, Ord (Cr s), FromJSON (Cr s), Ord (Event r (i, Effect s)), FromJSON (Event r (i, Effect s))) => FromJSON (CMsg i r s)
+instance (FromJSON s) => FromJSON (BMsg s)
 
 class Transport t where
   data Dest t
   data Src t
   type Res t :: * -> *
 
-class Carries t i r s where
-  send :: Dest t -> CMsg i r s -> Res t ()
-  listen :: Src t -> (CMsg i r s -> Res t Bool) -> Res t ()
+class Carries t s where
+  send :: Dest t -> BMsg s -> Res t ()
+  listen :: Src t -> (BMsg s -> Res t Bool) -> Res t ()
 
 ---
 
@@ -47,7 +47,7 @@ instance Transport (TChan a) where
   data Src (TChan a) = InChan (TChan a)
   type Res (TChan a) = STM
 
-instance Carries (TChan (CMsg i r s)) i r s where
+instance Carries (TChan (BMsg s)) s where
   send (OutChan chan) msg = writeTChan chan msg
   listen (InChan chan) handle = do
     msg <- readTChan chan
@@ -63,18 +63,18 @@ instance Transport HttpT where
   data Src HttpT = HttpSrc Port
   type Res HttpT = IO
 
-msgGetter :: (ToJSON (CMsg i r s), FromJSON (CMsg i r s)) => (CMsg i r s -> IO Bool) -> Application
+msgGetter :: (ToJSON (BMsg s), FromJSON (BMsg s)) => (BMsg s -> IO Bool) -> Application
 msgGetter handle request respond = do
   body <- strictRequestBody request
   case decode body of
     Just msg -> handle msg
-  respond $ responseLBS status200 [] "Thanks."
+  respond $ responseLBS status200 [] "OK"
 
-instance (ToJSON (CMsg i r s), FromJSON (CMsg i r s)) => Carries HttpT i r s where
+instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
   send (HttpDest man dest) msg = do
     let req = dest { Client.method = "POST"
                    , Client.requestBody = Client.RequestBodyLBS $ encode msg }
-    response <- Client.httpLbs req man
+    catch (Client.httpLbs req man >> return ()) (\(Client.HttpExceptionRequest _ _) -> return ())
     return ()
   listen (HttpSrc p) handle = do
     run p (msgGetter handle)

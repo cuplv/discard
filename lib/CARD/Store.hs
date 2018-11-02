@@ -1,3 +1,4 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -24,7 +25,12 @@ class (Eq (Ef s), Eq (Cr s), Ord (Ef s), Ord (Cr s)) => Store s where
 
   data Cr s
   defineConflict :: Cr s -> Ef s -> Bool
-  
+
+class (EG r (i, Effect s) m, Store s) => EGS i r s m
+instance (EG r (i, Effect s) m, Store s) => EGS i r s m
+
+type Summaries i r s = Map (Hist i r s) s
+
 newtype Effect s = Effect [Ef s] deriving (Generic)
 
 deriving instance (Store s, Read (Ef s)) => Read (Effect s)
@@ -39,6 +45,9 @@ instance (Ord (Ef s), FromJSON (Ef s)) => FromJSON (Effect s)
 
 ef :: Ef s -> Effect s
 ef e = Effect [e]
+
+ef0 :: Effect s
+ef0 = Effect []
 
 (|>|) :: Effect s -> Effect s -> Effect s
 (|>|) (Effect e1) (Effect e2) = Effect (e1 ++ e2)
@@ -67,6 +76,9 @@ crT = Conref (Set.empty)
 (|&|) :: (Store s) => Conref s -> Conref s -> Conref s
 (|&|) (Conref c1) (Conref c2) = Conref (Set.union c1 c2)
 
+impl :: (Store s) => Conref s -> Conref s -> Bool
+impl (Conref c1) (Conref c2) = and (Set.map (`Set.member` c1) c2)
+
 checkBlock :: (Store s) => Conref s -> Effect s -> Bool
 checkBlock (Conref cs) (Effect es) = or (defineConflict <$> (Set.toList cs) <*> es)
 checkBlock EQV (Effect es) = case es of
@@ -84,7 +96,7 @@ evalHist res s0 = foldg res (\s (_,e) -> runEffect s e) s0
 evalHistS :: (Ord s, Store s, EG r (i, Effect s) m) 
           => r 
           -> s 
-          -> Map (s, Edge r (i, Effect s)) s
+          -> Map (Edge r (i, Effect s)) s
           -> Hist i r s 
           -> m (s,CacheResult)
 evalHistS res s0 = folds res (\(_,e) s -> runEffect s e) s0
