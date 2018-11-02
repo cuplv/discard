@@ -29,11 +29,11 @@ data IpfsHttp = IpfsHttp Manager String
 
 -- | Create an IPFS HTTP API endpoint connection
 mkIpfsHttp :: String -- ^ Hostname or IP address
-           -> String -- ^ Port
+           -> Int -- ^ Port
            -> IO IpfsHttp
 mkIpfsHttp addr port = IpfsHttp
   <$> newManager defaultManagerSettings
-  <*> pure ("http://"++addr++ ":"++port)
+  <*> pure ("http://"++addr++ ":"++show port)
 
 putRespP = withObject "PutResponse" $ \v -> do
   hash <- v .: "Hash"
@@ -69,7 +69,7 @@ putBaz api = do foo <- put api (objData "foo")
                 bar <- put api (objData "bar")
                 put api (objData "baz" <> objLink "l1" foo <> objLink "l2" bar)
 
-testy = do api <- mkIpfsHttp "localhost" "5001"
+testy = do api <- mkIpfsHttp "localhost" 5001
            baz <- putBaz api
            quux <- put api (objData "quux" <> objLink "baznode" baz)
            Prelude.putStrLn "Refs of baz:"

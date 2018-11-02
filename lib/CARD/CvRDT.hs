@@ -1,15 +1,9 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE StandaloneDeriving #-}
-{-# LANGUAGE DeriveGeneric #-}
 
-module CARD.CvRDT where
-
-import Control.Monad.Identity
+module CARD.CvRDT
+  ( CvRDT (..)
+  ) where
 
 class CvRDT r s m where
   merge :: r -> s -> s -> m s

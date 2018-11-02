@@ -13,7 +13,7 @@ First, get the project.
     $ cd card-systems
 
 Next, make sure you can build the project.  If you have the
-[`nix`](https://nixos.org) package manager, here is a process:
+[`nix`](https://nixos.org) package manager, the process is simple:
 
     $ nix-env -i cabal2nix cabal-install
     $ cabal2nix --shell . > shell.nix
@@ -25,45 +25,34 @@ in which replicas announce updates via http and store their history in
 IPFS.  To try it, first make sure there is an [IPFS daemon][4] running
 with it's API on port `5001` (the default).
 
-    $ ipfs daemon --init
+    $ nix run nixpkgs.ipfs -c ipfs daemon --init
 
 Then, open three terminals, and run the following:
 
-    (term 1)$ cabal run -- \
-        0 http://localhost:45550/ \
-        1 http://localhost:45551/ \
-        2 45552
+    (term 1)$ cabal run -- -c example-network.yaml -i alpha
 
-    (term 2)$ cabal run -- \
-        1 http://localhost:45551/ \
-        2 http://localhost:45552/ \
-        0 45550
+    (term 2)$ cabal run -- -c example-network.yaml -i beta
 
-    (term 3)$ cabal run -- \
-        2 http://localhost:45552/ \
-        0 http://localhost:45550/ \
-        1 45551
+    (term 3)$ cabal run -- -c example-network.yaml -i epsilon
 
 Now a node is running in each terminal.  Choose one and type `check`
 to see the current shared account value (0 to start).  Add money with
 `dp INT`, withdraw with `wd INT`.
 
-You may notice that `wd INT` does not return immediately; it is
-waiting for confirmation from the other nodes that they will not
-concurrently withdraw.  The other nodes are waiting for your input and
-thus "not listening".  Wake them up by running `check` in both of
-their terminals.  The first should now complete the withdrawal.
-
-You can also run `check exact` to see an absolutely up-to-date account
-value.  This must perform coordination similar to that of `wd INT`.
+Try testing the safety of the system by running `wd INT` with enough
+value to empty the account simultaneously on two nodes.
 
 You can edit [`./cardr/Main.hs`][2] to see how the library is used and
 make a more interesting example.  The bank operations are implemented
 in [`./lib/CARD/LQ/Bank.hs`][3].
 
+Library documentation, which is still minimal and disorganized, can be
+compiled with `cabal haddock`.
 
 ## Alternate setup ##
-Without nix, or if nix doesn't work, here's another way to set up the system.
+
+If you don't have Nix, here's another way to set up the system (that
+hasn't been tested in a while...)
 
 1. [Install ipfs](https://docs.ipfs.io/introduction/install/)
 1. [Install stack](https://docs.haskellstack.org/en/stable/README/#how-to-install)

@@ -1,13 +1,35 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module CARD.Store where
+module CARD.Store
+  ( Store (..)
+  , Ef (..)
+  , Cr (..)
+  , EGS
+  , Summaries
+  , Effect
+  , ef
+  , ef0
+  , (|>|)
+  , runEffect
+  , Conref
+  , cr
+  , crT
+  , crEqv
+  , (|&|)
+  , impl
+  , checkBlock
+  , Hist
+  , appendAs
+  , evalHist
+  , evalHistS
+  , Counter (..)
+  ) where
 
 import Data.Foldable (foldl')
 import Data.Set (Set)
@@ -73,11 +95,18 @@ cr c = Conref (Set.singleton c)
 crT :: Conref s
 crT = Conref (Set.empty)
 
+crEqv :: Conref s
+crEqv = EQV
+
 (|&|) :: (Store s) => Conref s -> Conref s -> Conref s
 (|&|) (Conref c1) (Conref c2) = Conref (Set.union c1 c2)
+(|&|) EQV _ = EQV
+(|&|) _ EQV = EQV
 
 impl :: (Store s) => Conref s -> Conref s -> Bool
 impl (Conref c1) (Conref c2) = and (Set.map (`Set.member` c1) c2)
+impl EQV _ = True
+impl (Conref _) EQV = False
 
 checkBlock :: (Store s) => Conref s -> Effect s -> Bool
 checkBlock (Conref cs) (Effect es) = or (defineConflict <$> (Set.toList cs) <*> es)
@@ -96,7 +125,7 @@ evalHist res s0 = foldg res (\s (_,e) -> runEffect s e) s0
 evalHistS :: (Ord s, Store s, EG r (i, Effect s) m) 
           => r 
           -> s 
-          -> Map (Edge r (i, Effect s)) s
+          -> Summaries i r s
           -> Hist i r s 
           -> m (s,CacheResult)
 evalHistS res s0 = folds res (\(_,e) s -> runEffect s e) s0

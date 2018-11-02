@@ -1,4 +1,12 @@
-module CARD.LQ where
+module CARD.LQ 
+  ( LQ (..)
+  , Op
+  , issue
+  , query
+  , assert
+  , module Control.Monad.Free
+
+  ) where
 
 import Control.Monad.Free
 

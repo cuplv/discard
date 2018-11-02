@@ -2,16 +2,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module CARD.EventGraph.SetEG where
+module CARD.EventGraph.SetEG
+  ( SetEG
+  ) where
 
-import Control.Monad.Identity
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Maybe
-import Data.Foldable (foldl')
 import Data.Aeson
 
 import CARD.EventGraph

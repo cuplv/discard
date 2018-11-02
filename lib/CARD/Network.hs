@@ -6,7 +6,16 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module CARD.Network where
+module CARD.Network 
+  ( BMsg (..)
+  , Transport (..)
+  , Dest (..)
+  , Src (..)
+  , Carries (..)
+  , HttpT (..)
+  , msgGetter
+  
+  ) where
 
 import Control.Exception (catch)
 import Control.Concurrent.STM
@@ -16,13 +25,6 @@ import Network.Wai
 import Network.Wai.Handler.Warp
 import GHC.Generics
 import Network.HTTP.Types
-
--- data CMsg i r s = BCast i (Edge r (i, Effect s))
---                 | ARequest i (Conref s)
---                 | AGrant i (Conref s)
---                 | ARelease i
---                 | UpdatesPls i
---                 deriving (Generic)
 
 data BMsg s = BCast s deriving (Generic)
 

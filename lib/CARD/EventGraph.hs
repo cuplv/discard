@@ -26,13 +26,12 @@ module CARD.EventGraph
   , serialize
   ) where
 
-import Control.Monad (foldM,filterM)
+import Control.Monad (filterM)
 import Data.Foldable (foldl')
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.Trans
 import GHC.Generics
 import Data.Aeson
 

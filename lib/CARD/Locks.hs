@@ -7,7 +7,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module CARD.Locks where
+module CARD.Locks
+  ( Locks
+  -- * Modify the locks
+  , request
+  , grant
+  , release
+  -- * Examine the locks
+  , permitted
+  , requested
+  , holding
+  , confirmed
+  ) where
 
 import Data.Map (Map)
 import qualified Data.Map as Map

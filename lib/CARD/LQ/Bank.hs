@@ -2,8 +2,7 @@
 
 module CARD.LQ.Bank where
 
-import CARD.Store
-import CARD.LQ
+import CARD
 
 deposit :: Int -> Op Counter (Either String Int)
 deposit n = assert (n > 0) "Must deposit at least 1." $ do
@@ -20,7 +19,7 @@ withdraw n = assert (n > 0) "Must withdraw at least 1." $ do
 withdrawS :: Int -> Op Counter (Either String Int)
 withdrawS n = withdraw n >>= \case
   Left "Not enough in account." -> do
-    (Counter s) <- query EQV
+    (Counter s) <- query crEqv
     if s >= n
        then issue (ef$ Sub n) >> return (Right n)
        else return (Left "Seriously, not enough in account.")
@@ -31,5 +30,5 @@ current = do (Counter s) <- query crT
              return s
 
 currentS :: Op Counter Int
-currentS = do (Counter s) <- query EQV
+currentS = do (Counter s) <- query crEqv
               return s
