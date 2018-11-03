@@ -27,7 +27,7 @@ module CARD.EventGraph
   ) where
 
 import Control.Monad (filterM)
-import Data.Foldable (foldl')
+import Data.Foldable (foldl',foldrM)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
@@ -77,6 +77,8 @@ class (EGB r, Monad m, Eq (Event r d), Ord (Event r d)) => EG r d m where
   event :: r -> Edge r d -> d -> m (Event r d)
   unpack :: r -> Event r d -> m (d, Edge r d)
   vis :: r -> Event r d -> Event r d -> m Bool
+  multiVis :: r -> Set (Event r d) -> Set (Event r d) -> m (Set (Event r d))
+  multiVis r s1 s2 = filterSetM (\e -> not <$> vis' r e (Edge s2)) s1
 
 -- | Create a new event, appending it to the event graph
 append :: (EG r d m) => r -> d -> Edge r d -> m (Edge r d)
@@ -115,17 +117,35 @@ contains r (Edge s) e = do let inEdge = Set.member e s
 vis' :: (EG r d m) => r -> Event r d -> Edge r d -> m Bool
 vis' r e (Edge s) = orM (vis r e) (Set.toList s)
 
--- | Merge two event graphs (which may have common prefixes)
-mergeEG :: (EG r d m) => r -> Edge r d -> Edge r d -> m (Edge r d)
-mergeEG r g1@(Edge s1) g2@(Edge s2) = do 
-  if g1 == g2
-     then return g1
-     else do us1 <- filterM (\e -> not <$> (vis' r e g2)) (Set.toList s1)
-             us2 <- filterM (\e -> not <$> (vis' r e g1)) (Set.toList s2)
-             return (Edge (Set.union (Set.fromList us1) (Set.fromList us2)))
+
+-- | This is 'filterM' for a Set
+filterSetM :: (Ord a, Monad m) => (a -> m Bool) -> Set a -> m (Set a)
+filterSetM f s = foldrM filt Set.empty s
+  where filt e s = do r <- f e
+                      if r
+                         then return (Set.insert e s)
+                         else return s
+
+-- | Merge two event graphs which may have common prefixes.
+--
+-- From an efficiency standpoint, it's important to note that 'merge2'
+-- first checks whether the first 'Edge' argument is contained in the
+-- second.  So if there is a use case in which one edge @b@ is very
+-- likely to contain edge @a@, you should invoke it as @merge2 r a b@.
+merge2 :: (EG r d m) => r -> Edge r d -> Edge r d -> m (Edge r d)
+merge2 r (Edge s1) (Edge s2) = do
+  let -- Sort shared and unshared head events
+      shared = Set.intersection s1 s2
+      s1' = s1 Set.\\ shared
+      s2' = s2 Set.\\ shared
+  -- Eliminate s1 unshared heads that are in s2
+  s1'' <- multiVis r s1' (s2' <> shared)
+  -- Eliminate s2 unshared heads that are in the remains of s1
+  s2'' <- multiVis r s2' (s1'' <> shared)
+  return (Edge (shared <> s1'' <> s2''))
 
 instance (EG r d m) => CvRDT r (Edge r d) m where
-  merge = mergeEG
+  merge = merge2
   cvempty _ = return empty
 
 setLast :: Set a -> Maybe (a, Set a)
@@ -139,7 +159,7 @@ setLast xs = let (as,bs) = Set.splitAt (Set.size xs - 1) xs
 pop :: (EG r d m) => r -> Edge r d -> m (Maybe (d, Edge r d))
 pop r (Edge s) = mayMap f (setLast s)
   where f (e,es1) = do (d,es2) <- unpack r e
-                       es3 <- mergeEG r (Edge es1) es2
+                       es3 <- merge2 r (Edge es1) es2
                        return (d,es3)
 
 -- | Unpack all events in an edge set, returning them in their
