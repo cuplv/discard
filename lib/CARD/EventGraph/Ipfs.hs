@@ -19,6 +19,8 @@ import qualified Data.Set as Set
 import Data.ByteString.Lazy (fromStrict,toStrict)
 import Data.Text.Encoding (encodeUtf8,decodeUtf8)
 
+import System.IO (hFlush,stdout)
+
 import Storage.Ipfs.Types
 import Storage.Ipfs.Http
 
@@ -50,14 +52,23 @@ nameHist =
 
 instance (Ord d, ToJSON d, FromJSON d) => EG IpfsEG d IO where
   event (IpfsEG api) hist d = do 
-    IpfsEv <$> put api (IpfsObject (decodeUtf8 . toStrict . encode $ d) (nameHist hist))
+    putStr "Putting event... " >> hFlush stdout
+    rval <- IpfsEv <$> put api (IpfsObject (decodeUtf8 . toStrict . encode $ d) (nameHist hist))
+    putStrLn "Done" >> hFlush stdout
+    return rval
   unpack (IpfsEG api) (IpfsEv path) = do
+    putStr "Getting event... " >> hFlush stdout
     (IpfsObject d links) <- get api path
-    case eitherDecode (fromStrict $ encodeUtf8 d) of
-      Right dt -> return (dt, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
-      Left e -> die e
+    rval <- case eitherDecode (fromStrict $ encodeUtf8 d) of
+              Right dt -> return (dt, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
+              Left e -> die e
+    putStrLn "Done" >> hFlush stdout
+    return rval
   vis (IpfsEG api) (IpfsEv p1) (IpfsEv p2) = do
-    elem p1 <$> refs api True p2
+    putStr "Checking vis... " >> hFlush stdout
+    rval <- elem p1 <$> refs api True p2
+    putStrLn "Done" >> hFlush stdout
+    return rval
 
 instance (ToJSON d) => ToJSON (Event IpfsEG d) where
   toJSON (IpfsEv path) = toJSON path

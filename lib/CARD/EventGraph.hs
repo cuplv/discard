@@ -118,9 +118,11 @@ vis' r e (Edge s) = orM (vis r e) (Set.toList s)
 -- | Merge two event graphs (which may have common prefixes)
 mergeEG :: (EG r d m) => r -> Edge r d -> Edge r d -> m (Edge r d)
 mergeEG r g1@(Edge s1) g2@(Edge s2) = do 
-  us1 <- filterM (\e -> not <$> (vis' r e g2)) (Set.toList s1)
-  us2 <- filterM (\e -> not <$> (vis' r e g1)) (Set.toList s2)
-  return (Edge (Set.union (Set.fromList us1) (Set.fromList us2)))
+  if g1 == g2
+     then return g1
+     else do us1 <- filterM (\e -> not <$> (vis' r e g2)) (Set.toList s1)
+             us2 <- filterM (\e -> not <$> (vis' r e g1)) (Set.toList s2)
+             return (Edge (Set.union (Set.fromList us1) (Set.fromList us2)))
 
 instance (EG r d m) => CvRDT r (Edge r d) m where
   merge = mergeEG

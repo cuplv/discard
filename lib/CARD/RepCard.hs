@@ -27,6 +27,7 @@ import GHC.Conc (forkIO,registerDelay,readTVar,TVar,threadDelay)
 import Control.Concurrent.STM hiding (check)
 import qualified Control.Concurrent.STM as STM
 import System.Random
+import System.IO (hFlush,stdout)
 
 import CARD.CvRDT
 import CARD.Network
@@ -70,7 +71,9 @@ upWithSumms post (_,r) s0 (_,hist) summs = do
   lstm $ swapTVar post s
   case result of
     Hit -> return summs
-    _ -> return (Map.insert hist s summs)
+    _ -> do liftIO $ putStrLn "Summary miss." >> hFlush stdout
+            liftIO $ putStrLn ("Summ-size now " ++ show (Map.size summs + 1))
+            return (Map.insert hist s summs)
 
 initManager :: (Ord s, ManC i r s () t) 
             => i 
@@ -115,11 +118,12 @@ managerLoop = do
         Nothing -> const Nothing <$> STM.check False
       
       setTimeout :: (MonadIO (Res t)) => ManM i r s k t ()
-      setTimeout = do rand <- manRand <$> get
-                      let (time,rand') = randomR (200000,400000) rand -- 0.2s to 0.4s
-                      modify (\m -> m {manRand = rand'})
-                      tv <- liftIO $ registerDelay time
-                      modify (\m -> m {manEmitTimeout = Just tv})
+      setTimeout = return ()
+      -- setTimeout = do rand <- manRand <$> get
+      --                 let (time,rand') = randomR (200000,400000) rand -- 0.2s to 0.4s
+      --                 modify (\m -> m {manRand = rand'})
+      --                 tv <- liftIO $ registerDelay time
+      --                 modify (\m -> m {manEmitTimeout = Just tv})
 
       cancelTimeout :: (MonadIO (Res t)) => ManM i r s k t ()
       cancelTimeout = modify (\m -> m {manEmitTimeout = Nothing})
@@ -141,7 +145,7 @@ managerLoop = do
          then do modify (\m -> m {manEmitTimeout = Nothing})
                  lift (emitSndOn (append r2 (i,e)))
                  succeed
-         else return ()
+         else failJob
     Just (Request c) -> do 
       locks <- fst <$> lift check
       if not $ requested i c locks
@@ -168,16 +172,26 @@ runOp :: (Store s)
       => TQueue (Either l (Job s)) -- ^ The manager's job queue
       -> TMVar Bool -- ^ The manager's result box
       -> TVar s -- ^ The latest state var
+      -> Int -- ^ Delay multiplier
       -> Op s a -- ^ The operation to execute
-      -> IO (Either EvalFail a)
-runOp jq rv sv t = 
+      -> IO (Either EvalFail a,Int)
+runOp jq rv sv n t = runOpR jq rv sv 0 t
+
+runOpR :: (Store s)
+       => TQueue (Either l (Job s)) -- ^ The manager's job queue
+       -> TMVar Bool -- ^ The manager's result box
+       -> TVar s -- ^ The latest state var
+       -> Int -- ^ Delay multiplier
+       -> Op s a -- ^ The operation to execute
+       -> IO (Either EvalFail a,Int)
+runOpR jq rv sv n t = 
   let ctx = Eval
         ef0
         (lstm . writeTQueue jq . Right)
         (lstm $ takeTMVar rv)
         (lstm $ readTVar sv)
   in runStateT (runExceptT (evalOp t)) ctx >>= \case
-       (Left EvalFail,_) -> return (Left EvalFail)
+       (Left EvalFail,_) -> return (Left EvalFail,n)
        (Right a,ctx) -> do 
          result <- if evalEffect ctx /= ef0
                       then do (evalJobQueue ctx) (Emit (evalEffect ctx))
@@ -188,10 +202,11 @@ runOp jq rv sv t =
          (evalJobQueue ctx) Release
          (evalJobResult ctx)
          case result of
-           Left _ -> do putStrLn "Failed, retrying."
-                        threadDelay 200000
-                        runOp jq rv sv t
-           r -> return r
+           Left _ -> do putStrLn $ "Failed, retrying x" ++ show n
+                        (delay,_) <- randomR (200000,400000) <$> getStdGen
+                        threadDelay (delay * (2 ^ n))
+                        runOpR jq rv sv (n + 1) t
+           r -> return (r,n)
 
 data Eval s = Eval
   { evalEffect :: Effect s

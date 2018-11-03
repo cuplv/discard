@@ -77,20 +77,20 @@ node = do
   (inbox,result,latest) <- initManager i otherIds otherDests ipfsr (Counter 0)
   let runOp' = runOp inbox result latest
   mkListener (mkSrc port) inbox
-  bankScript i inbox result latest
+  bankScript 0 i inbox result latest
   return ()
 
-bankScript name inbox result latest = do
+bankScript n name inbox result latest = do
   liftIO $ putStr (name ++ " $ ") >> hFlush stdout
   cmd <- words <$> getLine
-  case cmd of
-    ["dp",n] -> runOp inbox result latest (deposit $ read n) >>= (\_ -> return ())
-    ["wd",n] -> runOp inbox result latest (withdraw $ read n) >>= (\_ -> return ())
-    ["check"] -> runOp inbox result latest current >>= (putStrLn.show)
-    ["check","exact"] -> runOp inbox result latest currentS >>= (putStrLn.show)
-    _ -> putStrLn "Try again."
+  n' <- case cmd of
+          ["dp",a] -> runOp inbox result latest n (deposit $ read a) >>= (\(_,n) -> return (n - 1))
+          ["wd",a] -> runOp inbox result latest n (withdraw $ read a) >>= (\(_,n) -> return (n - 1))
+          ["check"] -> runOp inbox result latest n current >>= (putStrLn.show.fst) >> return n
+          ["check","exact"] -> runOp inbox result latest n currentS >>= (putStrLn.show.fst) >> return n
+          _ -> putStrLn "Try again." >> return n
 
-  bankScript name inbox result latest
+  bankScript n' name inbox result latest
 
 mkListener :: (Carries HttpT (CardState i r s))
            => Src HttpT 
