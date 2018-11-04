@@ -11,6 +11,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:     CARD
+                     , CARD.EventGraph.Internal
                      , CARD.EventGraph.SetEG
                      , CARD.EventGraph.Ipfs
                      , CARD.LQ.Bank

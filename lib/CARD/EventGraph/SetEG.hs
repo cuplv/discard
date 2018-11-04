@@ -13,7 +13,7 @@ import qualified Data.Set as Set
 import Data.Maybe
 import Data.Aeson
 
-import CARD.EventGraph
+import CARD.EventGraph.Internal
 
 data SetEG = SetEG deriving (Eq, Ord)
 
@@ -27,10 +27,14 @@ deriving instance (Show d) => Show (Event SetEG d)
 instance (Monad m, Ord d) => EG SetEG d m where
   event _ g d = return $ g :<: d
   unpack _ (g :<: d) = return (d,g)
-  vis r e1 (es :<: _) = 
-    if Set.member e1 (edgeSet es)
-       then return True
-       else or <$> mapM (vis r e1) (Set.toList . edgeSet $ es)
+  vis r e1 (es :<: _) = case es of
+    Multi s -> if Set.member e1 s
+                  then return True
+                  else or <$> mapM (vis r e1) (Set.toList s)
+    Single _ _ e -> if e1 == e
+                       then return True
+                       else vis r e1 e
+
 
 instance (ToJSON d) => ToJSON (Event SetEG d) where
   toJSON (e :<: d) = object ["payload" .= d, "history" .= e]

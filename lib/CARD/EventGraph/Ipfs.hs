@@ -24,7 +24,7 @@ import System.IO (hFlush,stdout)
 import Storage.Ipfs.Types
 import Storage.Ipfs.Http
 
-import CARD.EventGraph
+import CARD.EventGraph.Internal
 
 newtype IpfsEG = IpfsEG IpfsHttp
 
@@ -43,12 +43,14 @@ mkIpfsEG' :: IO IpfsEG
 mkIpfsEG' = mkIpfsEG "localhost" 5001
 
 nameHist :: Edge IpfsEG d -> Map FilePath IpfsPath
-nameHist = 
-  Map.fromList
-  . zip (map (\i -> "pre" <> (show $ i)) [0..])
-  . map (\(IpfsEv p) -> p)
-  . Set.toList
-  . edgeSet
+nameHist g = case g of
+  Multi s -> Map.fromList
+             . zip (map (\i -> "pre" <> (show $ i)) [0..])
+             . map (\(IpfsEv p) -> p)
+             . Set.toList
+             $ s
+  Single _ _ (IpfsEv p) -> Map.singleton "pre0" p
+
 
 instance (Ord d, ToJSON d, FromJSON d) => EG IpfsEG d IO where
   event (IpfsEG api) hist d = do 
@@ -60,7 +62,7 @@ instance (Ord d, ToJSON d, FromJSON d) => EG IpfsEG d IO where
     putStr "Getting event... " >> hFlush stdout
     (IpfsObject d links) <- get api path
     rval <- case eitherDecode (fromStrict $ encodeUtf8 d) of
-              Right dt -> return (dt, Edge . Set.fromList . map IpfsEv . Map.elems $ links)
+              Right dt -> return (dt, Multi . Set.fromList . map IpfsEv . Map.elems $ links)
               Left e -> die e
     putStrLn "Done" >> hFlush stdout
     return rval
