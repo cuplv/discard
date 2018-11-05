@@ -61,6 +61,8 @@ executable cardr
                      , containers
                      , yaml
                      , optparse-applicative
+                     , random
+                     , time
   hs-source-dirs:      cardr
   default-language:    Haskell2010
 

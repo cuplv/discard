@@ -7,15 +7,18 @@ module Main where
 
 import System.IO
 import System.Exit
+import Data.List (genericLength)
 import Control.Monad
 import Control.Monad.Trans (MonadIO,liftIO)
-import Control.Concurrent (forkIO,ThreadId)
+import Control.Concurrent (forkIO,ThreadId,threadDelay)
 import Control.Concurrent.STM hiding (check)
 import Network.HTTP.Client
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Yaml
 import Options.Applicative
+import System.Random
+import Data.Time.Clock
 
 import CARD
 import CARD.LQ.Bank
@@ -44,7 +47,10 @@ instance (Ord i, FromJSON i) => FromJSON (NetConf i) where
 
 data ConfCLI = ConfCLI
   { confFile :: FilePath
-  , nodeName :: String }
+  , nodeName :: String
+  , expMode :: Bool
+  , expMix :: String
+  , expRate :: Int }
 
 confCLI :: IO ConfCLI
 confCLI = execParser $ 
@@ -55,6 +61,9 @@ confCLI = execParser $
         <*> strOption (short 'i' 
                        <> metavar "NAME" 
                        <> help "Node name")
+        <*> switch (long "experiment")
+        <*> strOption (long "mix" <> value "15p")
+        <*> option auto (long "rate" <> value 10000)
       misc = (fullDesc
               <> progDesc "Run a bank account CARD node"
               <> header "cardr - a CARD demo")
@@ -75,10 +84,34 @@ node = do
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
   (inbox,result,latest) <- initManager i otherIds otherDests ipfsr (Counter 0)
-  let runOp' = runOp inbox result latest
   mkListener (mkSrc port) inbox
-  bankScript 0 i inbox result latest
+  if expMode conf
+     then do rand <- getStdGen
+             let vals = randomRs (1,100) rand :: [Int]
+             latencies <- exprScript 1000 [] 0 vals (mkMix (expMix conf)) (expRate conf) inbox result latest
+             let average = ((sum latencies) / genericLength latencies) :: Double
+             putStrLn $ "Average (s): " ++ show average
+
+     else bankScript 0 i inbox result latest >> return ()
   return ()
+
+mkMix mix = case mix of
+  "15p" -> \v -> case () of
+                   _ | v <= 7 -> deposit 10 >> return ()
+                     | v <= 15 -> withdraw 1 >> return ()
+                     | otherwise -> current >> return ()
+
+exprScript num lates n vals mix rate inbox result latest = do
+  let cmd = mix (head vals)
+  startTime <- getCurrentTime
+  n' <- runOp inbox result latest n cmd >>= (\(_,n) -> return (n - 1))
+  endTime <- getCurrentTime
+  let latency = (fromRational.toRational $ diffUTCTime endTime startTime) :: Double
+  print latency
+  threadDelay rate
+  if num > 0
+     then exprScript (num - 1) (latency:lates) n' (tail vals) mix rate inbox result latest
+     else return (latency:lates)
 
 bankScript n name inbox result latest = do
   liftIO $ putStr (name ++ " $ ") >> hFlush stdout
