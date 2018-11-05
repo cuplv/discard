@@ -80,7 +80,7 @@ node = do
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
   let (otherIds,otherLocs) = unzip (others i net)
-  ipfsr <- mkIpfsEG'
+  ipfsr <- mkIpfsEG' (nodeName conf)
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
   (inbox,result,latest) <- initManager i otherIds otherDests ipfsr (Counter 0)

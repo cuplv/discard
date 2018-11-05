@@ -21,6 +21,7 @@ library
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
+                     , CARD.Lamport
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
