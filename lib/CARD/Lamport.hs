@@ -1,4 +1,8 @@
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module CARD.Lamport
   ( LClock
@@ -44,3 +48,32 @@ upto :: (Ord i) => i -> LClock i -> Int
 upto i (LClock cl) = case Map.lookup i cl of
   Just n -> n
   Nothing -> 0
+
+
+data LHist i r d = LHist (LClock i) [(i,d)] (Maybe (Ref r))
+
+class LHistStore r where
+  data Ref r
+  chunkSize :: r -> Int
+
+class (Ord i, Ord d, LHistStore r, Monad m) => LHistM i r d m where
+  loadChunk :: r -> Ref r -> m [(i,d)]
+  arb :: r -> (i,d) -> (i,d) -> m Bool
+
+putInOrder :: (LHistM i r d m) => r -> (i,d) -> (i,d) -> m [(i,d)]
+putInOrder r e1 e2 = arb r e1 e2 >>= \case
+  True -> return [e2,e1]
+  False -> return [e1,e2]
+
+instance (LHistM i r d m) => CvRDT r (LHist i r d) m where
+  merge r (LHist c1 ((i1,d1):e1) t1) (LHist c2 ((i2,d2):e2) t2)
+
+    | c1 == c2 = return (LHist c1 ((i1,d1):e1) t1)
+
+    | upto i1 c2 >= upto i1 c1 = merge r (LHist (untick i1 c1) e1 t1) (LHist c2 ((i2,d2):e2) t2)
+    | upto i2 c1 >= upto i2 c2 = merge r (LHist c1 ((i1,d1):e1) t1)   (LHist (untick i2 c2) e2 t2)
+    | otherwise = do (LHist c' e' t') <- merge r (LHist (untick i1 c1) e1 t1) (LHist (untick i2 c2) e2 t2)
+                     es <- putInOrder r (i1,d1) (i2,d2)
+                     return (LHist (tick i1 . tick i2 $ c') (es ++ e') t')
+
+  cvempty _ = return $ LHist mempty [] Nothing
