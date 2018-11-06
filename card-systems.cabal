@@ -23,6 +23,7 @@ library
                      , Storage.Ipfs.Http
                      , CARD.Lamport
                      , CARD.Experiment
+                     , CARD.Node
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store

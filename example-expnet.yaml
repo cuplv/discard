@@ -1,0 +1,14 @@
+- name: alpha     # name is required, any string
+  host: localhost # host is optional, defaults to localhost
+  port: 23001     # port is optional, defaults to 23001
+  expPort: 24001  # expPort is optional, defaults to 24001
+
+- name: beta
+  host: localhost
+  port: 23002
+  expPort: 24002
+
+# - name: epsilon
+#   host: localhost
+#   port: 24003
+#   expPort: 24003
