@@ -22,6 +22,7 @@ library
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
                      , CARD.Lamport
+                     , CARD.Experiment
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
@@ -70,3 +71,47 @@ executable cardr
   -- This bit is required for turtle sub-processes to not hang
   -- sometimes?
   ghc-options:       -threaded
+
+executable cardr-experiment-server
+  main-is:             Server.hs
+  build-depends:       base >=4.10 && <4.13
+                     , card-systems
+                     , mtl
+                     , stm
+                     , containers
+                     , yaml
+                     , optparse-applicative
+                     , random
+                     , time
+                     , text
+                     , aeson
+                     , bytestring
+
+                     , wai
+                     , warp
+                     , http-types
+
+  hs-source-dirs:      experiment-server
+  default-language:    Haskell2010
+
+
+executable cardr-experiment-client
+  main-is:             Client.hs
+  build-depends:       base >=4.10 && <4.13
+                     , card-systems
+                     , mtl
+                     , stm
+                     , containers
+                     , yaml
+                     , optparse-applicative
+                     , random
+                     , time
+                     , text
+                     , aeson
+                     , bytestring
+
+                     , http-client
+                     , http-types
+
+  hs-source-dirs:      experiment-client
+  default-language:    Haskell2010

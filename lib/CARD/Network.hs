@@ -14,7 +14,11 @@ module CARD.Network
   , Carries (..)
   , HttpT (..)
   , msgGetter
-  
+  , NetConf (..)
+  , others
+  , self
+  , defaultPort
+
   ) where
 
 import Control.Exception (catch)
@@ -25,6 +29,9 @@ import Network.Wai
 import Network.Wai.Handler.Warp
 import GHC.Generics
 import Network.HTTP.Types
+import Data.Map (Map)
+import qualified Data.Map as Map
+import Control.Monad (foldM)
 
 data BMsg s = BCast s deriving (Generic)
 
@@ -80,3 +87,28 @@ instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
     return ()
   listen (HttpSrc p) handle = do
     run p (msgGetter handle)
+
+data NetConf i = NetConf (Map i (String, Int)) deriving (Show,Eq,Ord)
+
+others :: (Ord i) => i -> NetConf i -> [(i,(String,Int))]
+others i (NetConf m) = filter (\(i',_) -> i /= i') (Map.toList m)
+
+self i (NetConf m) = Map.lookup i m
+
+instance (ToJSON i) => ToJSON (NetConf i) where
+  toJSON (NetConf m) = 
+    toJSON (map ent $ Map.assocs m)
+    where ent (i,(h,p)) = object ["name" .= i
+                                 ,"host" .= h
+                                 ,"port" .= p]
+
+instance (Ord i, FromJSON i) => FromJSON (NetConf i) where
+  parseJSON = withArray "NodeList" $ \v -> NetConf <$> do
+    foldM unpack Map.empty v
+    where unpack m = withObject "Node" $ \v -> do
+            name <- v .: "name"
+            host <- v .:? "host" .!= "localhost"
+            port <- v .:? "port" .!= defaultPort
+            return (Map.insert name (host,port) m)
+
+defaultPort = 23001 :: Int

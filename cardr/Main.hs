@@ -24,26 +24,9 @@ import CARD
 import CARD.LQ.Bank
 import CARD.EventGraph.Ipfs (mkIpfsEG')
 
-defaultPort = 23001 :: Int
-
 main :: IO ()
 main = node
 
-data NetConf i = NetConf (Map i (String, Int))
-
-others :: (Ord i) => i -> NetConf i -> [(i,(String,Int))]
-others i (NetConf m) = filter (\(i',_) -> i /= i') (Map.toList m)
-
-self i (NetConf m) = Map.lookup i m
-
-instance (Ord i, FromJSON i) => FromJSON (NetConf i) where
-  parseJSON = withArray "NodeList" $ \v -> NetConf <$> do
-    foldM unpack Map.empty v
-    where unpack m = withObject "Node" $ \v -> do
-            name <- v .: "name"
-            host <- v .:? "host" .!= "localhost"
-            port <- v .:? "port" .!= defaultPort
-            return (Map.insert name (host,port) m)
 
 data ConfCLI = ConfCLI
   { confFile :: FilePath
