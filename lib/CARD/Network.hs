@@ -86,7 +86,7 @@ instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
     catch (Client.httpLbs req man >> return ()) (\(Client.HttpExceptionRequest _ _) -> return ())
     return ()
   listen (HttpSrc p) handle = do
-    run p (msgGetter handle)
+    runSettings (setHost "!6" . setPort p $ defaultSettings) (msgGetter handle)
 
 data NetConf i = NetConf (Map i (String, Int)) deriving (Show,Eq,Ord)
 

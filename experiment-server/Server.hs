@@ -27,7 +27,8 @@ import CARD.Node
 
 data ServerConf i = ServerConf
   { serverId :: i
-  , serverPort :: Int }
+  , serverPort :: Int
+  , ipfsPort :: Int }
 
 confCLI :: IO (ServerConf String)
 confCLI = execParser $
@@ -40,6 +41,7 @@ confCLI = execParser $
                <> help ("port for control server to listen on (default " 
                         ++ show defaultServerPort ++ ")") 
                <> value defaultServerPort)
+        <*> option auto (long "ipfs-port" <> value 5001)
 
       misc = (fullDesc <> progDesc "Run an experiment node")
   in info (parser <**> helper) misc
@@ -54,11 +56,11 @@ experimentNode conf = do
   let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
   runSettings sets 
               (cmdGetter (serverId conf) 
-                         (startExp (serverId conf) lastv resultsv) 
+                         (startExp (serverId conf) (ipfsPort conf) lastv resultsv) 
                          (resultsExp resultsv))
 
-startExp :: String -> TVar Int -> TVar (Map Int ExpResult) -> (ExpConf, NetConf String) -> IO (Maybe Int)
-startExp i lastv resultsv (ec,nc) = do
+startExp :: String -> Int -> TVar Int -> TVar (Map Int ExpResult) -> (ExpConf, NetConf String) -> IO (Maybe Int)
+startExp i ipfsPort lastv resultsv (ec,nc) = do
   last <- readTVarIO lastv
   (Map.lookup last <$> readTVarIO resultsv) >>= \case
      Nothing -> return Nothing
@@ -67,7 +69,7 @@ startExp i lastv resultsv (ec,nc) = do
        atomically $ swapTVar lastv current
        -- Start the experiment
        forkIO $ do 
-         avg <- runNode i nc (expScript ec)
+         avg <- runNode i (ipfsPort) nc (expScript ec)
          atomically $ modifyTVar resultsv (Map.insert current avg)
          putStrLn $ "Finished experiment " ++ show current
        putStrLn $ "Started experiment " ++ show current
@@ -83,8 +85,8 @@ expScript :: ExpConf -> Script String ExpResult
 expScript econf n name inbox result latest = do
   rand <- getStdGen
   let vals = randomRs (1,100) rand :: [Int]
-  -- Wait 1 second to make sure everyone is listening
-  threadDelay 1000000
+  -- Wait 3 seconds to make sure everyone is listening
+  threadDelay 3000000
   expStartTime <- getCurrentTime
   let recScript n lates vals = do
         let op = chooseOp bankProfile (expMix econf) (head vals)
@@ -99,8 +101,8 @@ expScript econf n name inbox result latest = do
            else recScript n' lates' (tail vals)
   lates <- recScript 0 [] vals
   let average = ((sum lates) / genericLength lates) :: Double
-  -- Wait 5 seconds for other nodes to finish
-  threadDelay 5000000
+  -- Wait 30 seconds for other nodes to finish
+  threadDelay 30000000
   return $ ExpResult average
 
 

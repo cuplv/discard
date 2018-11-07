@@ -66,7 +66,7 @@ runExperiment ec enc = do
                                   Just n -> return (n,addr)
           c -> print c >> die "Oops"
   exps <- traverse mkReq addrs
-  threadDelay $ (expTime ec + 10) * 1000000
+  threadDelay $ (expTime ec + 60) * 1000000
   let getRes :: (Int,String) -> IO ExpResult
       getRes (n,addr) = do
         ireq <- parseRequest addr

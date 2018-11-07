@@ -20,7 +20,7 @@ import System.Random
 
 import CARD
 import CARD.LQ.Bank
-import CARD.EventGraph.Ipfs (IpfsEG,mkIpfsEG')
+import CARD.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
 
 type Script i a = 
      Int 
@@ -31,15 +31,16 @@ type Script i a =
   -> IO a
 
 runNode :: String
+        -> Int
         -> NetConf String
         -> Script String a
         -> IO a
-runNode i net script = do
+runNode i ipfsPort net script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
   let (otherIds,otherLocs) = unzip (others i net)
-  ipfsr <- mkIpfsEG' i
+  ipfsr <- mkIpfsEG "localhost" ipfsPort i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
   (inbox,result,latest) <- initManager i otherIds otherDests ipfsr (Counter 100000)
