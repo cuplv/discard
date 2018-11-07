@@ -57,7 +57,7 @@ instance (ToJSON i) => ToJSON (ExpCmd i) where
   toEncoding = genericToEncoding defaultOptions
 instance (Ord i, FromJSON i) => FromJSON (ExpCmd i)
 
-data ExpResult = ExpResult Double deriving (Show,Generic)
+data ExpResult = ExpResult { expResultAvg :: Double } deriving (Show,Generic)
 
 instance ToJSON ExpResult where
   toEncoding = genericToEncoding defaultOptions

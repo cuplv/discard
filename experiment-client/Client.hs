@@ -76,4 +76,6 @@ runExperiment ec enc = do
           c | c == status200 -> case decode (responseBody resp) of
                                   Just d -> return d
   results <- traverse getRes exps
+  let avg = sum (map expResultAvg (Map.elems results)) / genericLength (Map.elems results)
   print results
+  putStrLn $ "Total average: " ++ show avg
