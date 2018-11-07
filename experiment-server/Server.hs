@@ -51,10 +51,11 @@ experimentNode :: ServerConf String -> IO ()
 experimentNode conf = do
   lastv <- newTVarIO 0
   resultsv <- newTVarIO (Map.fromList [(0,ExpResult (-1.0))])
-  run (serverPort conf) 
-      (cmdGetter (serverId conf) 
-                 (startExp (serverId conf) lastv resultsv) 
-                 (resultsExp resultsv))
+  let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
+  runSettings sets 
+              (cmdGetter (serverId conf) 
+                         (startExp (serverId conf) lastv resultsv) 
+                         (resultsExp resultsv))
 
 startExp :: String -> TVar Int -> TVar (Map Int ExpResult) -> (ExpConf, NetConf String) -> IO (Maybe Int)
 startExp i lastv resultsv (ec,nc) = do
