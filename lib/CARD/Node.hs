@@ -22,20 +22,20 @@ import CARD
 import CARD.LQ.Bank
 import CARD.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
 
-type Script i a = 
-     Int 
-  -> i 
-  -> TQueue (Either (BMsg (CardState i (IpfsEG i) Counter)) (Job Counter)) 
-  -> TMVar Bool
-  -> TVar Counter
+type Script i r s a = 
+  i 
+  -> ManagerConn i r s
   -> IO a
 
-runNode :: String
-        -> Int
-        -> NetConf String
-        -> Script String a
+runNode :: (Ord s, ManC i (IpfsEG i) s () HttpT) 
+        => i  -- ^ Name
+        -> Int -- ^ IPFS Port
+        -> NetConf i -- ^ Replica network
+        -> s -- ^ Initial store value
+        -> Int -- ^ Timeout unit size (microseconds)
+        -> Script i (IpfsEG i) s a -- ^ Actions to perform
         -> IO a
-runNode i ipfsPort net script = do
+runNode i ipfsPort net s0 n script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
@@ -43,18 +43,19 @@ runNode i ipfsPort net script = do
   ipfsr <- mkIpfsEG "localhost" ipfsPort i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
-  (inbox,result,latest) <- initManager i otherIds otherDests ipfsr (Counter 100000)
-  lt <- mkListener (mkSrc port) inbox
-  res <- script 0 i inbox result latest
+  man <- initManager i otherIds otherDests ipfsr s0 n
+  lt <- mkListener (mkSrc port) man
+  res <- script i man
   killThread lt
+  killManager man
   return res
 
 mkListener :: (Carries HttpT (CardState i r s))
            => Src HttpT 
-           -> TQueue (Either (BMsg (CardState i r s)) j) 
+           -> ManagerConn i r s
            -> IO ThreadId
-mkListener src q = 
-  forkIO (listen src (\m -> atomically (writeTQueue q (Left m)) 
+mkListener src man = 
+  forkIO (listen src (\m -> giveUpdate m man 
                             >> return True))
 
 mkMan :: IO Manager
