@@ -24,10 +24,11 @@ library
                      , CARD.Lamport
                      , CARD.Experiment
                      , CARD.Node
+                     , CARD.LQ
+                     , CARD.LQ.Internal
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
-                     , CARD.LQ
                      , CARD.RepCard
   build-depends:       base >=4.10 && <4.13
                      , containers

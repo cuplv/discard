@@ -15,7 +15,7 @@ module CARD.Store
   , Effect
   , ef
   , ef0
-  , (|>|)
+  , (|<|)
   , runEffect
   , Conref
   , cr
@@ -71,8 +71,8 @@ ef e = Effect [e]
 ef0 :: Effect s
 ef0 = Effect []
 
-(|>|) :: Effect s -> Effect s -> Effect s
-(|>|) (Effect e1) (Effect e2) = Effect (e1 ++ e2)
+(|<|) :: Effect s -> Effect s -> Effect s
+(|<|) (Effect e2) (Effect e1) = Effect (e1 ++ e2)
 
 runEffect :: (Store s) => s -> Effect s -> s
 runEffect s (Effect es) = foldl' defineEffect s es
