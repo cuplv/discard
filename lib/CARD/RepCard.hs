@@ -35,7 +35,7 @@ import CARD.EventGraph
 import CARD.Store
 import CARD.Locks
 import CARD.RepCore
-import CARD.LQ
+import CARD.LQ.Internal
 
 type CardState i r s = (Locks i s, Hist i r s)
 
@@ -176,6 +176,16 @@ runOp :: (Store s)
       -> Op s a -- ^ The operation to execute
       -> IO (Either EvalFail a,Int)
 runOp jq rv sv n t = runOpR jq rv sv 0 t
+
+-- execLQ :: (Store s) 
+--        => IO s -- ^ Lookup latest value
+--        -> ((Job s, LQ s a) -> IO ()) -- ^ Send to queue
+--        -> LQ s a 
+--        -> IO ()
+-- execLQ latest enq = runLQ (\c -> enq (Request c, rc))
+--   where satQuery c | c == crT = latest
+--                    | True = 
+--         rc = execLQ enq
 
 runOpR :: (Store s)
        => TQueue (Either l (Job s)) -- ^ The manager's job queue
