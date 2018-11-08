@@ -1,6 +1,9 @@
 module CARD.LQ 
   ( LQ
+  , HelpMe (..)
+  , helpMe
   , runLQ
+  , runLQ'
   , issue
   , query
   , assert

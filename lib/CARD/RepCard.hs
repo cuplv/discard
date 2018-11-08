@@ -177,15 +177,21 @@ runOp :: (Store s)
       -> IO (Either EvalFail a,Int)
 runOp jq rv sv n t = runOpR jq rv sv 0 t
 
--- execLQ :: (Store s) 
---        => IO s -- ^ Lookup latest value
---        -> ((Job s, LQ s a) -> IO ()) -- ^ Send to queue
---        -> LQ s a 
---        -> IO ()
--- execLQ latest enq = runLQ (\c -> enq (Request c, rc))
---   where satQuery c | c == crT = latest
---                    | True = 
---         rc = execLQ enq
+execQs :: (Store s) 
+       => Bool -- ^ Need release?
+       -> IO s -- ^ Lookup latest value
+       -> ((Job s, s -> IO ()) -> IO ()) -- ^ Send to queue
+       -> IO () -- ^ Finally do this
+       -> HelpMe (Conref s) s (a, Effect s)
+       -> IO ()
+execQs rel latest enq fin = \case
+  HelpMe c f | c == crT -> do s <- latest
+                              execQs rel latest enq (f s)
+             | True -> enq (Request c, execQs True latest enq fin . f)
+  GotIt (_,e) | e == ef0 -> if rel
+                               then enq (Release, \_ -> return ()) >> fin
+                               else fin
+              | True -> enq (Emit e, \_ -> fin)
 
 runOpR :: (Store s)
        => TQueue (Either l (Job s)) -- ^ The manager's job queue

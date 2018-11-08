@@ -4,7 +4,11 @@ module CARD.LQ.Internal
   ( LQNode (..)
   , LQ
   , LQEnv
+  , HelpMe (..)
+  , helpMe
+  , staticApp
   , runLQ
+  , runLQ'
   , runQuery
   , evalLQ
   , issue
@@ -57,9 +61,6 @@ staticApp :: r -> HelpMe c r a -> a
 staticApp r = \case
   HelpMe _ f -> staticApp r (f r)
   GotIt a -> a
-
-staticStore :: s -> LQ s a -> (a, Effect s)
-staticStore s t = staticApp s $ runLQ helpMe t
 
 runLQ :: (Monad m) => (Conref s -> m s) -> LQ s a -> m (a, Effect s)
 runLQ runq t = runStateT (runReaderT (evalLQ t) runq) ef0
