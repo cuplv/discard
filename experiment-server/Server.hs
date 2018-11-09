@@ -73,7 +73,7 @@ startExp i ipfsPort lastv resultsv (ec,nc) = do
       Nothing -> return Nothing
       Just _ -> return (Just (last + 1))
   let s0 = Counter 100000
-      tsize = 100000 -- 100ms
+      tsize = 1000000 -- 1s
   case mcurrent of
     Just current -> do
       atomically $ swapTVar lastv (Just current)

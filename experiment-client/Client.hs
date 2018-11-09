@@ -82,6 +82,8 @@ runExperiment ec enc = do
   results <- fold <$> traverse getRes exps
   putStrLn $ "* Individual latencies"
   mapM_ (\(s,l) -> putStrLn $ s ++ ": " ++ show l ++ " s") (Map.assocs (expAvgLatencies results))
+  putStrLn $ "* Failures"
+  print $ expUnfinished results
   putStrLn $ "* Total measures"
   putStrLn $ "Total requests: " ++ show (totalReqs results) ++ " req"
   putStrLn $ "True rate: " ++ show (trueReqRate ec results) ++ " req/s"

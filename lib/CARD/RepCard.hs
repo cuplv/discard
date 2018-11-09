@@ -225,6 +225,10 @@ workOnJob = manCurrentJob <$> get >>= \case
     i <- manId <$> get
     others <- manOthers <$> get
     locks <- fst <$> lift check
+    let releaseAll = 
+          if holding i locks
+             then lift (emitFstOn $ return . release i) >> return ()
+             else return ()
     case j of -- do work!
       Request c f -> do
         if not $ requested i c locks
@@ -238,16 +242,16 @@ workOnJob = manCurrentJob <$> get >>= \case
            then do r2 <- snd <$> lift resolver
                    lift (emitSndOn (append r2 (i,e)))
                    modify (\m -> m {manTimeoutSize = max 1 (manTimeoutSize m - 1)})
+                   liftIO $ putStrLn "Emitted."
                    advJob m
                    workOnJob
-           else handleFailure
+           else do releaseAll
+                   handleFailure
       Finish m -> do 
         -- Perform finishing callback
         liftIO m
         -- Release any held locks
-        if holding i locks
-           then lift (emitFstOn $ return . release i) >> return ()
-           else return ()
+        releaseAll
         onCurrent finishJob
         workOnJob
 
@@ -263,6 +267,8 @@ handleFailure :: (ManC i r s k t) => ManM i r s k t ()
 handleFailure = do
   onCurrent failJob
   setTimeout
+  liftIO $ putStrLn "Handling failure..."
+  liftIO . print =<< manTimeoutSize <$> get
   modify (\m -> m {manTimeoutSize = manTimeoutSize m * 2})
 
 setTimeout :: (ManC i r s k t) => ManM i r s k t ()
