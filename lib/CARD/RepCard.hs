@@ -33,6 +33,7 @@ import Control.Concurrent.STM hiding (check)
 import qualified Control.Concurrent.STM as STM
 import System.Random
 import System.IO (hFlush,stdout)
+import Data.Time.Clock
 
 import CARD.CvRDT
 import CARD.Network
@@ -41,6 +42,7 @@ import CARD.Store
 import CARD.Locks
 import CARD.RepCore
 import CARD.LQ
+import CARD.RateControl
 
 type CardState i r s = (Locks i s, Hist i r s)
 
@@ -101,6 +103,8 @@ runLQR :: (Store s)
        -> IO a
 runLQR man t = handleQR man (runLQ' t)
 
+data Work j = Work j j
+
 -- In Working, the first j is the complete, unevaluated job which will
 -- be reinstated upon a retry
 data Workspace j = Working j j | Waiting j | Idle
@@ -125,12 +129,14 @@ data Manager i r s = Manager
   , manId :: i
   , manOthers :: [i]
   , manJobQueue :: TQueue (Job s IO ())
+  , manEasyJobQueue :: TQueue (Job s IO ())
   , manCurrentJob :: Workspace (Job s IO ())
   , manRand :: StdGen
   , manTimeoutVar :: Maybe (TVar Bool)
   , manTimeoutSize :: Int
   , manTimeoutBase :: Int
-  , manLatest :: TVar s }
+  , manLatest :: TVar s
+  , manRCIndex :: RCIndex i s (Job s IO ()) }
 
 type ManM i r s k t = StateT (Manager i r s) (CoreM ((),r) (CardState i r s) k t)
 
@@ -168,6 +174,7 @@ initManager :: (Ord s, ManC i r s () t)
 initManager i os ds r s0 ts = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
+  easyJobQueue <- newTQueueIO
   latestState <- newTVarIO s0
   rand <- getStdGen
   let manager = Manager
@@ -175,12 +182,14 @@ initManager i os ds r s0 ts = do
         i
         os
         jobQueue
+        easyJobQueue
         Idle
         rand
         Nothing
         1
         ts
         latestState
+        emptyRCIndex
       onUp = upWithSumms latestState ((),r) s0
   ti <- forkIO $ do
           runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
@@ -193,8 +202,12 @@ managerLoop = do
   handleLatest
   -- Work on current job or start next one
   workOnJob
-  -- Grant locking requests from other replicas
+  -- Put jobs ready for retry back in the queues
+  resurrectFails
+  -- Enque locking requests from other replicas
   handleLockReqs
+  -- And grant them at the appropriate rate
+  grantLockReqs
   -- And loop
   managerLoop
 
@@ -203,20 +216,79 @@ onCurrent :: (ManC i r s k t)
           -> ManM i r s k t ()
 onCurrent f = modify (\m -> m { manCurrentJob = f (manCurrentJob m) })
 
+data ManEvent i r s = ManNew (Either (BMsg (CardState i r s)) 
+                                     (Job s IO ())) 
+                    | ManRate (RCIndex i s (Job s IO ())) 
+
 handleLatest :: (ManC i r s k t) => ManM i r s k t ()
 handleLatest = do
   man <- get
-  let timeout :: STM (Maybe a)
-      timeout = case manTimeoutVar man of
-        Just tv -> const Nothing <$> (STM.check <=< readTVar) tv
-        Nothing -> const Nothing <$> STM.check False
-  lstm (Just <$> readTQueue (manInbox man) <|> timeout) >>= \case
-    Just (Right j) -> -- enque job
-      lstm $ writeTQueue (manJobQueue man) j 
-    Just (Left (BCast s)) -> -- incorporate update
+  let updates = (ManRate <$> awaitTimeouts (manRCIndex man))
+                <|> (ManNew <$> readTQueue (manInbox man)) 
+  lstm updates >>= \case
+    ManNew (Right j) -> case j of
+      Request _ _ -> lstm $ writeTQueue (manJobQueue man) j
+      _ -> lstm $ writeTQueue (manEasyJobQueue man) j
+    ManNew (Left (BCast s)) -> 
       lift (incorp s) >> return ()
-    Nothing -> -- retry time is up, restart job
-      onCurrent restartJob
+    ManRate rci' -> 
+      modify (\m -> m { manRCIndex = rci' })
+  -- let timeout :: STM (Maybe a)
+  --     timeout = case manTimeoutVar man of
+  --       Just tv -> const Nothing <$> (STM.check <=< readTVar) tv
+  --       Nothing -> const Nothing <$> STM.check False
+  -- lstm (Just <$> readTQueue (manInbox man) <|> timeout) >>= \case
+  --   Just (Right j) -> -- enque job
+  --     lstm $ writeTQueue (manJobQueue man) j 
+  --   Just (Left (BCast s)) -> -- incorporate update
+  --     lift (incorp s) >> return ()
+  --   Nothing -> -- retry time is up, restart job
+  --     onCurrent restartJob
+
+type JobQueue s m a = (TQueue (Job s m a), TMVar (Job s m a, Job s m a))
+
+workOnQueue :: (ManC i r s k t) => JobQueue s IO () -> ManM i r s k t ()
+workOnQueue (t,cur) = do
+  i <- manId <$> get
+  others <- manOthers <$> get
+  locks <- fst <$> lift check
+  let releaseAll = 
+        if holding i locks
+           then lift (emitFstOn $ return . release i) >> return ()
+           else return ()
+  lstm (tryReadTMVar cur) >>= \case
+    Just (j0,j) -> case j of
+      Request c f -> do
+        if not $ requested i c locks
+           then lift (emitFstOn $ return . request i c) >> return ()
+           else if confirmed i others locks
+                   then do j' <- liftIO . f =<< lstm . readTVar =<< manLatest <$> get
+                           lstm (swapTMVar cur (j0,j'))
+                           workOnQueue (t,cur)
+                   else return ()
+      Emit e m -> do
+        case permitted' i e locks of
+          Right () -> do 
+            r2 <- snd <$> lift resolver
+            lift (emitSndOn (append r2 (i,e)))
+            modify (\m -> m {manRCIndex = reportSuccess e (manRCIndex m)})
+            j' <- liftIO m
+            lstm (swapTMVar cur (j0,j'))
+            workOnQueue (t,cur)
+          Left c -> do 
+            releaseAll
+            rci' <- reportFailure c j0 . manRCIndex <$> get
+            lstm (takeTMVar cur)
+            return ()
+      Finish m -> do
+        liftIO m
+        releaseAll
+        lstm (takeTMVar cur)
+        workOnQueue (t,cur)
+    Nothing -> lstm (tryReadTQueue t) >>= \case
+      Just j0 -> do lstm (putTMVar cur (j0,j0))
+                    workOnQueue (t,cur)
+      Nothing -> return ()
 
 workOnJob :: (ManC i r s k t) => ManM i r s k t ()
 workOnJob = manCurrentJob <$> get >>= \case
@@ -285,80 +357,23 @@ advJob :: (ManC i r s k t) => IO (Job s IO ()) -> ManM i r s k t ()
 advJob = (onCurrent . stepJob =<<) . liftIO
 
 handleLockReqs :: (ManC i r s k t) => ManM i r s k t ()
+-- handleLockReqs = do
+--   i <- manId <$> get
+--   others <- manOthers <$> get
+--   lift . emitFstOn $ \ls -> return $ foldr (grant i) ls others
+--   return ()
 handleLockReqs = do
   i <- manId <$> get
-  others <- manOthers <$> get
-  lift . emitFstOn $ \ls -> return $ foldr (grant i) ls others
-  return ()
+  rci <- manRCIndex <$> get
+  locks <- fst <$> lift check
+  rci' <- liftIO $ foldM (flip enqueGrant) rci (ungranted i locks)
+  modify (\m -> m { manRCIndex = rci' })
 
--- managerLoop :: (ManC i r s k t) => ManM i r s k t ()
--- managerLoop = do
---   i <- manId <$> get
---   (r1,r2) <- lift resolver
---   others <- manOthers <$> get
---   inbox <- manInbox <$> get
---   outbox <- manResult <$> get
---   timeoutVar <- manEmitTimeout <$> get
+grantLockReqs :: (ManC i r s k t) => ManM i r s k t ()
+grantLockReqs = undefined
 
---   let succeed = do lstm $ putTMVar outbox True
---                    modify (\m -> m {manJob = Nothing})
---       failJob = do lstm $ putTMVar outbox False
---                    modify (\m -> m {manJob = Nothing})
-
---       timeout :: STM (Maybe a)
---       timeout = case timeoutVar of
---         Just tv -> const Nothing <$> (STM.check <=< readTVar) tv
---         Nothing -> const Nothing <$> STM.check False
-
---       setTimeout :: (MonadIO (Res t)) => ManM i r s k t ()
---       setTimeout = return ()
---       -- setTimeout = do rand <- manRand <$> get
---       --                 let (time,rand') = randomR (200000,400000) rand -- 0.2s to 0.4s
---       --                 modify (\m -> m {manRand = rand'})
---       --                 tv <- liftIO $ registerDelay time
---       --                 modify (\m -> m {manEmitTimeout = Just tv})
-
---       cancelTimeout :: (MonadIO (Res t)) => ManM i r s k t ()
---       cancelTimeout = modify (\m -> m {manEmitTimeout = Nothing})
-
---   -- Sort newest message
---   lstm (Just <$> readTQueue inbox <|> timeout) >>= \case
---     Just (Right j) -> do modify (\m -> m {manJob = Just j})
---                          case j of
---                            Emit _ -> setTimeout
---                            _ -> return ()
---     Just (Left (BCast s)) -> lift (incorp s) >> return ()
---     Nothing -> failJob -- Emit timeout has occured
-
---   -- Try to finish job
---   (manJob <$> get) >>= \case
---     Just (Emit e) -> do
---       locks <- fst <$> lift check
---       if permitted i e locks
---          then do modify (\m -> m {manEmitTimeout = Nothing})
---                  lift (emitSndOn (append r2 (i,e)))
---                  succeed
---          else failJob
---     Just (Request c) -> do 
---       locks <- fst <$> lift check
---       if not $ requested i c locks
---          then lift (emitFstOn $ return . request i c) >> return ()
---          else if confirmed i others locks
---                  then succeed
---                  else return ()
---     Just Release -> do
---       locks <- fst <$> lift check
---       if holding i locks
---          then lift (emitFstOn $ return . release i) >> return ()
---          else return ()
---       succeed
---     Nothing -> return ()
-
---   -- Handle open locking requests
---   lift . emitFstOn $ \ls -> return $ foldr (grant i) ls others
-
---   -- Loop
---   managerLoop
+resurrectFails :: (ManC i r s k t) => ManM i r s k t ()
+resurrectFails = undefined
 
 lstm :: MonadIO m => STM a -> m a
 lstm = liftIO . atomically
@@ -378,93 +393,3 @@ upWithSumms post (_,r) s0 (_,hist) summs = do
     _ -> do -- liftIO $ putStrLn "Summary miss." >> hFlush stdout
             -- liftIO $ putStrLn ("Summ-size now " ++ show (Map.size summs + 1))
             return (Map.insert hist s summs)
-
--- initManager :: (Ord s, ManC i r s () t) 
---             => i 
---             -> [i]
---             -> [Dest t]
---             -> r
---             -> s -- ^ Initial store value
---             -> IO ( TQueue (Either (BMsg (CardState i r s)) (Job s))
---                   , TMVar Bool
---                   , TVar s )
--- initManager i os ds r s0 = do
---   jobQueue <- lstm newTQueue
---   resultBox <- lstm newEmptyTMVar
---   latestState <- lstm $ newTVar s0
---   rand <- getStdGen
---   let manager = Manager jobQueue i os resultBox Nothing Nothing rand
---       onUp = upWithSumms latestState ((),r) s0
-
---   forkIO $ do
---     runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
---     return ()
-
---   return (jobQueue, resultBox, latestState)
-
-
--- -- | Run an operation, returning either its result or a failure
--- runOp :: (Store s)
---       => TQueue (Either l (Job s)) -- ^ The manager's job queue
---       -> TMVar Bool -- ^ The manager's result box
---       -> TVar s -- ^ The latest state var
---       -> Int -- ^ Delay multiplier
---       -> Op s a -- ^ The operation to execute
---       -> IO (Either EvalFail a,Int)
--- runOp jq rv sv n t = runOpR jq rv sv 0 t
-
-
--- runOpR :: (Store s)
---        => TQueue (Either l (Job s)) -- ^ The manager's job queue
---        -> TMVar Bool -- ^ The manager's result box
---        -> TVar s -- ^ The latest state var
---        -> Int -- ^ Delay multiplier
---        -> Op s a -- ^ The operation to execute
---        -> IO (Either EvalFail a,Int)
--- runOpR jq rv sv n t = 
---   let ctx = Eval
---         ef0
---         (lstm . writeTQueue jq . Right)
---         (lstm $ takeTMVar rv)
---         (lstm $ readTVar sv)
---   in runStateT (runExceptT (evalOp t)) ctx >>= \case
---        (Left EvalFail,_) -> return (Left EvalFail,n)
---        (Right a,ctx) -> do 
---          result <- if evalEffect ctx /= ef0
---                       then do (evalJobQueue ctx) (Emit (evalEffect ctx))
---                               (evalJobResult ctx) >>= \case
---                                 True -> return (Right a)
---                                 False -> return (Left EvalFail)
---                       else return (Right a)
---          (evalJobQueue ctx) Release
---          (evalJobResult ctx)
---          case result of
---            Left _ -> do putStrLn $ "Failed, retrying x" ++ show n
---                         (delay,_) <- randomR (200000,400000) <$> getStdGen
---                         threadDelay (delay * (2 ^ n))
---                         runOpR jq rv sv (n + 1) t
---            r -> return (r,n)
-
--- data Eval s = Eval
---   { evalEffect :: Effect s
---   , evalJobQueue :: Job s -> IO ()
---   , evalJobResult :: IO Bool
---   , evalLatest :: IO s }
-
--- data EvalFail = EvalFail deriving (Show,Eq,Ord)
-
--- type EvalM s m = ExceptT EvalFail (StateT (Eval s) m)
-
--- evalOp :: (MonadIO m) => Op s a -> EvalM s m a
--- evalOp t = do 
---   ctx <- lift get
---   case t of
---     Pure a -> return a
---     Free (Issue e t') -> do
---       lift $ modify (\m -> m {evalEffect = evalEffect m |>| e})
---       evalOp t'
---     Free (Query c ft') -> do
---       liftIO $ (evalJobQueue ctx) (Request c)
---       liftIO (evalJobResult ctx) >>= \case
---         True -> do evalOp . ft' =<< liftIO (evalLatest ctx)
---         False -> throwError EvalFail

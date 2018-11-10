@@ -15,7 +15,9 @@ module CARD.Locks
   , release
   -- * Examine the locks
   , permitted
+  , permitted'
   , requested
+  , ungranted
   , holding
   , confirmed
   ) where
@@ -87,6 +89,10 @@ grant ig ir (Locks m) =
 release :: (Ord i, Store s) => i -> Locks i s -> Locks i s
 release i m = m <> (Locks $ Map.singleton i (reqIndex i m + 1, crT, mempty))
 
+-- | List all requests that 'i' has not granted
+ungranted :: (Ord i, Store s) => i -> Locks i s -> [(i,Conref s)]
+ungranted i ls = undefined
+
 -- | Check if effect is blocked by current locks
 permitted :: (Ord i, Store s) => i -> Effect s -> Locks i s -> Bool
 permitted i e =
@@ -95,6 +101,11 @@ permitted i e =
   . map (\(n,c,s) -> checkBlock c e && Set.member i s)
   . Map.elems
   . locks
+
+-- | Check if effect is blocked by current locks, returning the
+-- blocking 'Conref' if so.
+permitted' :: (Ord i, Store s) => i -> Effect s -> Locks i s -> Either (Conref s) ()
+permitted' = undefined
 
 -- | Check if lock has been requested
 requested :: (Ord i, Store s) => i -> Conref s -> Locks i s -> Bool

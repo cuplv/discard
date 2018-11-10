@@ -26,6 +26,7 @@ library
                      , CARD.Node
                      , CARD.LQ
                      , CARD.LQ.Internal
+                     , CARD.RateControl
   other-modules:       CARD.EventGraph
                      , CARD.Network
                      , CARD.Store
