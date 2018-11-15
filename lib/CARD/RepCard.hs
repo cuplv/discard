@@ -198,12 +198,17 @@ initManager i os ds r s0 ts = do
 
 managerLoop :: (ManC i r s k t) => ManM i r s k t ()
 managerLoop = do
-  -- Handle latest event
+  -- Handle latest event (incorp update or enque job)
   handleLatest
-  -- Work on current job or start next one
-  workOnJob
-  -- Put jobs ready for retry back in the queues
+  -- Put jobs ready for retry back in the job queue
   resurrectFails
+  -- Send out locking requests for own jobs (and put the requesters
+  -- into the waiting area)
+  makeLockReqs
+  -- Work on current job or start next one, taking first from the
+  -- waiting area.  New jobs that need requests have the request made
+  -- and go to the waiting area.
+  workOnJob
   -- Enque locking requests from other replicas
   handleLockReqs
   -- And grant them at the appropriate rate

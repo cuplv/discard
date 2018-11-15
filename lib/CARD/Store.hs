@@ -24,6 +24,7 @@ module CARD.Store
   , (|&|)
   , impl
   , checkBlock
+  , checkBlock'
   , Hist
   , appendAs
   , evalHist
@@ -53,7 +54,18 @@ instance (EG r (i, Effect s) m, Store s) => EGS i r s m
 
 type Summaries i r s = Map (Hist i r s) s
 
+-- Note: Internally, an effect is a list of atomic 'Ef' values that is
+-- evaluated from *left to right*.  Externally, the composition
+-- function '|<|' adds them together such that @e2 |<| e1@ puts the
+-- effect of @e1@ before that of @e2@.
+
 newtype Effect s = Effect [Ef s] deriving (Generic)
+
+instance (Ord (Ef s)) => Semigroup (Effect s) where
+  (<>) = (|<|)
+
+instance (Ord (Ef s)) => Monoid (Effect s) where
+  mempty = ef0
 
 deriving instance (Store s, Read (Ef s)) => Read (Effect s)
 deriving instance (Store s, Show (Ef s)) => Show (Effect s)
@@ -79,6 +91,11 @@ runEffect s (Effect es) = foldl' defineEffect s es
 
 data Conref s = Conref (Set (Cr s)) | EQV deriving (Generic)
 
+instance (Ord (Cr s)) => Semigroup (Conref s) where
+  (<>) (Conref s1) (Conref s2) = Conref (s1 <> s2)
+  
+instance (Ord (Cr s)) => Monoid (Conref s) where
+  mempty = crT
 
 deriving instance (Store s) => Eq (Conref s)
 deriving instance (Store s) => Ord (Conref s)
@@ -108,11 +125,22 @@ impl (Conref c1) (Conref c2) = and (Set.map (`Set.member` c1) c2)
 impl EQV _ = True
 impl (Conref _) EQV = False
 
+-- | Check if conref blocks effect, returning 'True' it does block
 checkBlock :: (Store s) => Conref s -> Effect s -> Bool
 checkBlock (Conref cs) (Effect es) = or (defineConflict <$> (Set.toList cs) <*> es)
 checkBlock EQV (Effect es) = case es of
                                [] -> False
                                _ -> True
+
+-- | Check, returning the 'Left' value if there is a block
+checkBlock' :: (Store s) => Conref s -> Effect s -> Either (Conref s) ()
+checkBlock' (Conref cs) (Effect es) = 
+  if or (defineConflict <$> (Set.toList cs) <*> es)
+     then Left (Conref cs)
+     else Right ()
+checkBlock' EQV (Effect es) = case es of
+                                [] -> Right ()
+                                _ -> Left EQV
 
 type Hist i r s = Edge r (i, Effect s)
 

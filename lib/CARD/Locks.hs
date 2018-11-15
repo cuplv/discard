@@ -19,6 +19,7 @@ module CARD.Locks
   , requested
   , ungranted
   , holding
+  , holding'
   , confirmed
   ) where
 
@@ -30,7 +31,7 @@ import Control.Monad.State
 import GHC.Generics hiding (Rep)
 import Data.Aeson
 import Data.List (nub)
-import Data.Foldable (foldl')
+import Data.Foldable (fold,foldl')
 
 import Control.Monad.Free
 
@@ -105,7 +106,15 @@ permitted i e =
 -- | Check if effect is blocked by current locks, returning the
 -- blocking 'Conref' if so.
 permitted' :: (Ord i, Store s) => i -> Effect s -> Locks i s -> Either (Conref s) ()
-permitted' = undefined
+permitted' i e ls = 
+  let blockers = map (\(_,c,_) -> c) 
+                 . filter (\(n,c,s) -> checkBlock c e && Set.member i s) 
+                 . Map.elems 
+                 . locks 
+                 $ ls
+  in case blockers of
+       [] -> Right ()
+       bs -> Left (fold bs)
 
 -- | Check if lock has been requested
 requested :: (Ord i, Store s) => i -> Conref s -> Locks i s -> Bool
@@ -115,12 +124,19 @@ requested i c1 (Locks m) = case Map.lookup i m of
                 then True
                 else False
 
+-- | Check if node 'i' is holding any locks
 holding :: (Ord i, Store s) => i -> Locks i s -> Bool
 holding i (Locks m) = case Map.lookup i m of
   Just (_,c,_) -> if c == crT
                      then False
                      else True
   Nothing -> True
+
+-- | Return exactly the lock that 'i' is holding
+holding' :: (Ord i, Store s) => i -> Locks i s -> Conref s
+holding' i (Locks m) = case Map.lookup i m of
+  Just (_,c,_) -> c
+  Nothing -> crT
 
 -- | Check if currently requested lock has been confirmed by all
 -- participating identities
