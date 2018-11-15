@@ -75,6 +75,7 @@ instance Transport HttpT where
 msgGetter :: (ToJSON (BMsg s), FromJSON (BMsg s)) => (BMsg s -> IO Bool) -> Application
 msgGetter handle request respond = do
   body <- strictRequestBody request
+  -- putStr "RECV: " >> print body
   case decode body of
     Just msg -> handle msg
   respond $ responseLBS status200 [] "OK"
@@ -84,6 +85,7 @@ instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
     let req = dest { Client.method = "POST"
                    , Client.requestBody = Client.RequestBodyLBS $ encode msg }
     catch (Client.httpLbs req man >> return ()) (\(Client.HttpExceptionRequest _ _) -> return ())
+    -- putStr "SEND: " >> print (encode msg)
     return ()
   listen (HttpSrc p) handle = do
     runSettings (setHost "!6" . setPort p $ defaultSettings) (msgGetter handle)

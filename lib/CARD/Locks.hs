@@ -92,7 +92,8 @@ release i m = m <> (Locks $ Map.singleton i (reqIndex i m + 1, crT, mempty))
 
 -- | List all requests that 'i' has not granted
 ungranted :: (Ord i, Store s) => i -> Locks i s -> [(i,Conref s)]
-ungranted i ls = undefined
+ungranted i (Locks m) = map (\(ir,(_,c,_)) -> (ir,c)) $ filter ug (Map.assocs m)
+  where ug (ir,((_,c,s))) = i /= ir && not (i `Set.member` s) && c /= crT
 
 -- | Check if effect is blocked by current locks
 permitted :: (Ord i, Store s) => i -> Effect s -> Locks i s -> Bool
@@ -130,7 +131,7 @@ holding i (Locks m) = case Map.lookup i m of
   Just (_,c,_) -> if c == crT
                      then False
                      else True
-  Nothing -> True
+  Nothing -> False
 
 -- | Return exactly the lock that 'i' is holding
 holding' :: (Ord i, Store s) => i -> Locks i s -> Conref s

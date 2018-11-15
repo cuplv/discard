@@ -19,7 +19,7 @@ import CARD.CvRDT
 data LClock i = LClock (Map i Int) deriving (Show,Eq,Ord,Generic)
 
 instance (Ord i) => Semigroup (LClock i) where
-  (<>) (LClock m1) (LClock m2) = LClock (Map.intersectionWith (+) m1 m2)
+  (<>) (LClock m1) (LClock m2) = LClock (Map.unionWith (+) m1 m2)
 
 instance (Ord i) => Monoid (LClock i) where
   mempty = LClock (Map.empty)

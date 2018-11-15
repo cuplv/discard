@@ -93,7 +93,9 @@ data Conref s = Conref (Set (Cr s)) | EQV deriving (Generic)
 
 instance (Ord (Cr s)) => Semigroup (Conref s) where
   (<>) (Conref s1) (Conref s2) = Conref (s1 <> s2)
-  
+  (<>) EQV _ = EQV
+  (<>) _ EQV = EQV
+
 instance (Ord (Cr s)) => Monoid (Conref s) where
   mempty = crT
 
