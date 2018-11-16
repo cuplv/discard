@@ -8,6 +8,7 @@
 module CARD.RateControl
   ( RCIndex
   , newRCIndex
+  , getRCBlocker
   , reportFailure
   , reportSuccess
   , getRetry
@@ -41,12 +42,13 @@ takeQueue = \case
   (a:as) -> Just (a,as)
   [] -> Nothing
 
+data RetryControl = Open | Control (Maybe (TVar Bool))
+
 data RateControl g j = RateControl
   { rcIndex :: Int
   , rcReactOn :: Bool
   , rcGrantGate :: Maybe (TVar Bool)
-  , rcRetryGate :: Maybe (TVar Bool)
-  -- , rcGrantQueue :: TQueue g
+  , rcRetryGate :: RetryControl
   , rcGrantQueue :: Queue g
   , rcRetryQueue :: TQueue j }
 
@@ -58,8 +60,11 @@ data RCIndex i s j = RCIndex
 -- | Create a new index
 newRCIndex :: (Store s) => NominalDiffTime -> IO (RCIndex i s j)
 newRCIndex t = do
-  rc <- RateControl 1 True Nothing Nothing [] <$> newTQueueIO
+  rc <- RateControl 1 True Nothing Open [] <$> newTQueueIO
   return $ RCIndex (RCSettings t) crT rc
+
+getRCBlocker :: (Store s) => RCIndex i s j -> Conref s
+getRCBlocker (RCIndex _ cb _) = cb
 
 -- | Report a failure.  The 'Conref s' should be the smallest relevant
 -- bit of the blocking lock.  The 'j' is the job that will be retried
@@ -101,10 +106,12 @@ awaitTimeouts (RCIndex st cb rc) = do
       gRead = case rcGrantGate rc of
                 Just tv -> readTVar tv
                 Nothing -> return False
-      retryOpen = RCIndex st cb $ rc { rcRetryGate = Nothing }
+      retryOpen = case rcRetryGate rc of
+                    Control _ -> RCIndex st cb $ rc { rcRetryGate = Control Nothing }
+                    _ -> RCIndex st cb rc
       rRead = case rcRetryGate rc of
-                Just tv -> readTVar tv
-                Nothing -> return False
+                Control (Just tv) -> readTVar tv
+                _ -> return False
       grantTrig = const grantOpen <$> (check =<< gRead)
       retryTrig = const retryOpen <$> (check =<< rRead)
   retryTrig <|> grantTrig
@@ -130,11 +137,11 @@ initTimer base cong rmult =
 
 setRetryTimer :: RCSettings -> RateControl g j -> IO (RateControl g j)
 setRetryTimer sets rc = case rcRetryGate rc of
-  Just _ -> return rc
-  Nothing -> do
+  Control Nothing -> do
     (rmult,_) <- randomR (0.5, 2.0) <$> newStdGen
-    tm <- initTimer (baseTimeout sets) (rcIndex rc) rmult
-    return (rc { rcRetryGate = Just tm })
+    tm <- initTimer (baseTimeout sets / 2) (rcIndex rc) rmult
+    return (rc { rcRetryGate = Control (Just tm) })
+  _ -> return rc
 
 setGrantTimer :: RCSettings -> RateControl g j -> IO (RateControl g j)
 setGrantTimer sets rc = case rcGrantGate rc of
@@ -149,17 +156,20 @@ maxTimeout = 4
 
 reportFailure' :: RCSettings -> j -> RateControl g j -> IO (RateControl g j)
 reportFailure' sets ji rc = do
-  if rcReactOn rc
-     then do lstm (writeTQueue (rcRetryQueue rc) ji)
+  let rc' = case rcRetryGate rc of
+        Open -> rc { rcRetryGate = Control Nothing } 
+        _ -> rc
+  if rcReactOn rc'
+     then do lstm (writeTQueue (rcRetryQueue rc') ji)
              putStrLn ""
              putStrLn $ "********************"
              putStrLn $ "| Emit failure."
-             putStrLn $ "| RC index up to: " ++ show (2 * rcIndex rc)
-             putStrLn $ "| Timout up to: " ++ show (min maxTimeout (baseTimeout sets * fromIntegral (2 * rcIndex rc)))
+             putStrLn $ "| RC index up to: " ++ show (2 * rcIndex rc')
+             putStrLn $ "| Timout up to: " ++ show (min maxTimeout (baseTimeout sets * fromIntegral (2 * rcIndex rc')))
              putStrLn $ "********************"
              putStrLn ""
-             setRetryTimer sets (rc { rcIndex = 2 * rcIndex rc } { rcReactOn = False })
-     else lstm (writeTQueue (rcRetryQueue rc) ji) >> return rc
+             setRetryTimer sets (rc' { rcIndex = 2 * rcIndex rc' } { rcReactOn = False })
+     else lstm (writeTQueue (rcRetryQueue rc') ji) >> return rc'
 
 
 enqueGrant' :: (Eq g) => RCSettings -> g -> RateControl g j -> IO (RateControl g j)
@@ -170,12 +180,12 @@ enqueGrant' sets gi rc =
      else return rc
 
 reportSuccess' :: RateControl g j -> RateControl g j
-reportSuccess' rc = rc { rcIndex = max 1 (rcIndex rc - 1) }
+reportSuccess' rc = rc { rcIndex = max 1 (rcIndex rc - 1) } { rcRetryGate = Open }
 
 getRetry' :: RCSettings -> RateControl g j -> IO (Maybe (j, RateControl g j))
 getRetry' sets rc = case rcRetryGate rc of
-  Just _ -> return Nothing
-  Nothing -> lstm (tryReadTQueue (rcRetryQueue rc)) >>= \case
+  Control (Just _) -> return Nothing
+  _ -> lstm (tryReadTQueue (rcRetryQueue rc)) >>= \case
     Just j -> do rc' <- setRetryTimer sets rc
                  return (Just (j,rc' { rcReactOn = True }))
     Nothing -> return Nothing

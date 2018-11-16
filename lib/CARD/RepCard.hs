@@ -44,6 +44,8 @@ import CARD.RepCore
 import CARD.LQ
 import CARD.RateControl
 
+batchSize = 50 :: Int
+
 type CardState i r s = (Locks i s, Hist i r s)
 
 data Job s m a = 
@@ -195,21 +197,21 @@ initManager i os ds r s0 ts bw = do
 managerLoop :: (ManC i r s k t) => ManM i r s k t ()
 managerLoop = do
   -- Handle latest event (incorp update or enque job)
-  liftIO $ putStrLn "Handle latest..."
+  -- liftIO $ putStrLn "Handle latest..."
   handleLatest
   -- Put jobs ready for retry back in the job queue
-  liftIO $ putStrLn "Resurrect fails..."
+  -- liftIO $ putStrLn "Resurrect fails..."
   resurrectFails
   -- Work on current job or start next one, taking first from the
   -- waiting area.  New jobs that need requests have the request made
   -- and go to the waiting area.
-  liftIO $ putStrLn "Work..."
+  -- liftIO $ putStrLn "Work..."
   workOnJob
   -- Enque locking requests from other replicas
-  liftIO $ putStrLn "Handle lock reqs..."
+  -- liftIO $ putStrLn "Handle lock reqs..."
   handleLockReqs
   -- And grant them at the appropriate rate
-  liftIO $ putStrLn "Grant lock reqs..."
+  -- liftIO $ putStrLn "Grant lock reqs..."
   grantLockReqs
   -- And loop
   managerLoop
@@ -296,7 +298,7 @@ enbatch :: (ManC i r s k t) => Effect s -> ManM i r s k t ()
 enbatch e = do
   beff' <- (e:) . batcheff <$> get
   modify $ \m -> m { batcheff = beff' }
-  if length beff' >= 50
+  if length beff' >= batchSize
      then sendBatch
      else return ()
 
@@ -320,7 +322,11 @@ workOnJob = manCurrentJob <$> get >>= \case
         case permitted' i e locks of
           Right () -> do enbatch e
                          onRCI $ reportSuccess e
-                         liftIO $ putStrLn "Emit!"
+                         -- liftIO $ putStrLn "Emit!"
+                         rci <- manRCIndex <$> get
+                         if checkBlock (getRCBlocker rci) e
+                            then resurrectFails
+                            else return ()
                          advJob m
                          workOnJob
           Left c -> do onCurrent failJob
@@ -390,9 +396,12 @@ resurrectFails :: (ManC i r s k t) => ManM i r s k t ()
 resurrectFails = do
   man <- get
   liftIO (getRetry (manRCIndex man)) >>= \case
-    Just (j,rci') -> do lstm $ writeTQueue (manJobQueue man) j
-                        modify (\m -> m { manRCIndex = rci' })
-                        resurrectFails
+    Just (j,rci') -> 
+      do case j of
+           Request c fj -> putOnHold c fj
+           _ -> lstm $ writeTQueue (manJobQueue man) j
+         modify (\m -> m { manRCIndex = rci' })
+         resurrectFails
     Nothing -> return ()
 
 lstm :: MonadIO m => STM a -> m a
