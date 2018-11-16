@@ -26,10 +26,14 @@ import CARD.Node
 
 ------------------------------------------------------------------------
 
+defaultBaseTimeout :: Int
+defaultBaseTimeout = 10000 -- 0.01s
+
 data ServerConf i = ServerConf
   { serverId :: i
   , serverPort :: Int
-  , ipfsPort :: Int }
+  , ipfsPort :: Int
+  , baseTimeout :: Int }
 
 confCLI :: IO (ServerConf String)
 confCLI = execParser $
@@ -43,6 +47,10 @@ confCLI = execParser $
                         ++ show defaultServerPort ++ ")") 
                <> value defaultServerPort)
         <*> option auto (long "ipfs-port" <> value 5001)
+        <*> option auto (short 't' <> long "timeout" 
+                         <> metavar "MICROSEC"
+                         <> help "Base timeout interval (microseconds)"
+                         <> value defaultBaseTimeout)
 
       misc = (fullDesc <> progDesc "Run an experiment node")
   in info (parser <**> helper) misc
@@ -57,23 +65,23 @@ experimentNode conf = do
   let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
   runSettings sets 
               (cmdGetter (serverId conf) 
-                         (startExp (serverId conf) (ipfsPort conf) lastv resultsv) 
+                         (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) lastv resultsv) 
                          (resultsExp resultsv))
 
-startExp :: String 
-         -> Int 
+startExp :: String -- ^ Node name
+         -> Int -- ^ Port
+         -> Int -- ^ Base timeout (microseconds)
          -> TVar (Maybe Int)
          -> TVar (Map Int ExpResult) 
          -> (ExpConf, NetConf String) 
          -> IO (Maybe Int)
-startExp i ipfsPort lastv resultsv (ec,nc) = do
+startExp i ipfsPort tsize lastv resultsv (ec,nc) = do
   mcurrent <- atomically (readTVar lastv) >>= \case
     Nothing -> return (Just 0)
     Just last -> (Map.lookup last <$> readTVarIO resultsv) >>= \case
       Nothing -> return Nothing
       Just _ -> return (Just (last + 1))
   let s0 = Counter 100000
-      tsize = 1000000 -- 1s
   case mcurrent of
     Just current -> do
       atomically $ swapTVar lastv (Just current)
