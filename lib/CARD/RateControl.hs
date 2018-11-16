@@ -122,6 +122,7 @@ initTimer :: NominalDiffTime -- ^ Base timeout unit
 initTimer base cong rmult = 
   let micros = floor 
                . (* oneMil)
+               . min (toRational maxTimeout)
                . (* toRational rmult)
                . (* (toRational . fromIntegral $ cong))
                $ toRational base
@@ -143,6 +144,9 @@ setGrantTimer sets rc = case rcGrantGate rc of
     tm <- initTimer (baseTimeout sets) (rcIndex rc) rmult
     return (rc { rcGrantGate = Just tm })
 
+maxTimeout :: NominalDiffTime
+maxTimeout = 4
+
 reportFailure' :: RCSettings -> j -> RateControl g j -> IO (RateControl g j)
 reportFailure' sets ji rc = do
   if rcReactOn rc
@@ -151,7 +155,7 @@ reportFailure' sets ji rc = do
              putStrLn $ "********************"
              putStrLn $ "| Emit failure."
              putStrLn $ "| RC index up to: " ++ show (2 * rcIndex rc)
-             putStrLn $ "| Timout up to: " ++ show (baseTimeout sets * fromIntegral (2 * rcIndex rc))
+             putStrLn $ "| Timout up to: " ++ show (min maxTimeout (baseTimeout sets * fromIntegral (2 * rcIndex rc)))
              putStrLn $ "********************"
              putStrLn ""
              setRetryTimer sets (rc { rcIndex = 2 * rcIndex rc } { rcReactOn = False })
