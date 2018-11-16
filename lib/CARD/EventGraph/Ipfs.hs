@@ -47,22 +47,22 @@ nameHistL g = case g of
 instance (Ord i, ToJSON i, ToJSONKey i, FromJSON i, FromJSONKey i, Ord d, ToJSON d, FromJSON d) => EG (IpfsEG i) d IO where
 
   event (IpfsEG api i) hist d = do 
-    -- putStr "Putting event... " >> hFlush stdout
+    putStr "Putting event... " >> hFlush stdout
     let histMap = nameHistL hist
         histLinks = fmap fst histMap
         histClocks = fmap snd histMap
     ref <- put api (IpfsObject (decodeUtf8 . toStrict . encode $ (d,histClocks)) histLinks)
-    -- putStrLn "Done" >> hFlush stdout
+    putStrLn "Done" >> hFlush stdout
     let clock = foldr (\ce ca -> uncurry tick ce <> ca) mempty histClocks
     return (IpfsEv ref (i,clock))
 
   unpack (IpfsEG api i) (IpfsEv path (ie,cl)) = do
-    -- putStr "Getting event... " >> hFlush stdout
+    putStr "Getting event... " >> hFlush stdout
     (IpfsObject dt links) <- get api path
     (d,histClocks) <- case eitherDecode (fromStrict $ encodeUtf8 dt) of
                            Right d -> return d
                            Left e -> die e
-    -- putStrLn "Done" >> hFlush stdout
+    putStrLn "Done" >> hFlush stdout
     let hist = Map.intersectionWith IpfsEv links histClocks
     return (d, Multi . Set.fromList . Map.elems $ hist)
 

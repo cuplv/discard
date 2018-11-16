@@ -43,6 +43,7 @@ takeQueue = \case
 
 data RateControl g j = RateControl
   { rcIndex :: Int
+  , rcReactOn :: Bool
   , rcGrantGate :: Maybe (TVar Bool)
   , rcRetryGate :: Maybe (TVar Bool)
   -- , rcGrantQueue :: TQueue g
@@ -57,15 +58,15 @@ data RCIndex i s j = RCIndex
 -- | Create a new index
 newRCIndex :: (Store s) => NominalDiffTime -> IO (RCIndex i s j)
 newRCIndex t = do
-  rc <- RateControl 1 Nothing Nothing [] <$> newTQueueIO
+  rc <- RateControl 1 True Nothing Nothing [] <$> newTQueueIO
   return $ RCIndex (RCSettings t) crT rc
 
 -- | Report a failure.  The 'Conref s' should be the smallest relevant
 -- bit of the blocking lock.  The 'j' is the job that will be retried
 -- later.
 reportFailure :: (Store s) => Conref s -> j -> RCIndex i s j -> IO (RCIndex i s j)
-reportFailure c j (RCIndex st cb rc) = do
-  RCIndex st (cb |&| c) <$> reportFailure' st j rc
+reportFailure c j (RCIndex st cb rc) = RCIndex st (cb |&| c) <$> reportFailure' st j rc
+
 
 -- | Report a successful effect emission.
 reportSuccess :: (Store s) => Effect s -> RCIndex i s j -> IO (RCIndex i s j)
@@ -144,15 +145,18 @@ setGrantTimer sets rc = case rcGrantGate rc of
 
 reportFailure' :: RCSettings -> j -> RateControl g j -> IO (RateControl g j)
 reportFailure' sets ji rc = do
-  lstm (writeTQueue (rcRetryQueue rc) ji)
-  putStrLn ""
-  putStrLn $ "********************"
-  putStrLn $ "| Emit failure."
-  putStrLn $ "| RC index up to: " ++ show (2 * rcIndex rc)
-  putStrLn $ "| Timout up to: " ++ show (baseTimeout sets * fromIntegral (2 * rcIndex rc))
-  putStrLn $ "********************"
-  putStrLn ""
-  setRetryTimer sets (rc { rcIndex = 2 * rcIndex rc })
+  if rcReactOn rc
+     then do lstm (writeTQueue (rcRetryQueue rc) ji)
+             putStrLn ""
+             putStrLn $ "********************"
+             putStrLn $ "| Emit failure."
+             putStrLn $ "| RC index up to: " ++ show (2 * rcIndex rc)
+             putStrLn $ "| Timout up to: " ++ show (baseTimeout sets * fromIntegral (2 * rcIndex rc))
+             putStrLn $ "********************"
+             putStrLn ""
+             setRetryTimer sets (rc { rcIndex = 2 * rcIndex rc } { rcReactOn = False })
+     else lstm (writeTQueue (rcRetryQueue rc) ji) >> return rc
+
 
 enqueGrant' :: (Eq g) => RCSettings -> g -> RateControl g j -> IO (RateControl g j)
 enqueGrant' sets gi rc = 
@@ -169,7 +173,7 @@ getRetry' sets rc = case rcRetryGate rc of
   Just _ -> return Nothing
   Nothing -> lstm (tryReadTQueue (rcRetryQueue rc)) >>= \case
     Just j -> do rc' <- setRetryTimer sets rc
-                 return (Just (j,rc'))
+                 return (Just (j,rc' { rcReactOn = True }))
     Nothing -> return Nothing
 
 getGrant' :: RCSettings -> RateControl g j -> IO (Maybe (g, RateControl g j))

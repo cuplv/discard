@@ -192,16 +192,21 @@ initManager i os ds r s0 ts = do
 managerLoop :: (ManC i r s k t) => ManM i r s k t ()
 managerLoop = do
   -- Handle latest event (incorp update or enque job)
+  liftIO $ putStrLn "Handle latest..."
   handleLatest
   -- Put jobs ready for retry back in the job queue
+  liftIO $ putStrLn "Resurrect fails..."
   resurrectFails
   -- Work on current job or start next one, taking first from the
   -- waiting area.  New jobs that need requests have the request made
   -- and go to the waiting area.
+  liftIO $ putStrLn "Work..."
   workOnJob
   -- Enque locking requests from other replicas
+  liftIO $ putStrLn "Handle lock reqs..."
   handleLockReqs
   -- And grant them at the appropriate rate
+  liftIO $ putStrLn "Grant lock reqs..."
   grantLockReqs
   -- And loop
   managerLoop
@@ -352,6 +357,7 @@ workOnJob = manCurrentJob <$> get >>= \case
                          -- modify (\m -> m {manTimeoutSize = max 1 (manTimeoutSize m - 1)})
                          -- liftIO $ putStrLn "Emitted."
                          onRCI $ reportSuccess e
+                         liftIO $ putStrLn "Emit!"
                          advJob m
                          workOnJob
           Left c -> do onCurrent failJob
@@ -372,7 +378,7 @@ workOnJob = manCurrentJob <$> get >>= \case
     locks <- fst <$> lift check
     let releaseAll = 
           if holding i locks
-             then do -- liftIO (putStrLn "Releasing locks...")
+             then do liftIO (putStrLn "Releasing locks...")
                      mx <- grantMultiplex <$> get 
                      if mx > 1
                         then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
@@ -443,7 +449,7 @@ grantLockReqs = do
     Just ((i2,c),rci') -> do 
       modify $ \m -> m { manRCIndex = rci' }
       lift . emitFstOn $ \ls -> return (grant (manId man) i2 ls)
-      -- liftIO $ putStrLn "Granted lock."
+      liftIO $ putStrLn "Granted lock."
       return ()
     Nothing -> return ()
 
