@@ -340,6 +340,24 @@ putOnHold c fj = do
      else return ()
   modify (\m -> m { manWaitingRoom = (c,fj) : manWaitingRoom m })
 
+sendBatch :: (ManC i r s k t) => ManM i r s k t ()
+sendBatch = do
+  i <- manId <$> get
+  r2 <- snd <$> lift resolver
+  beff <- batcheff <$> get
+  if length beff > 0
+     then do lift (emitSndOn (append r2 (i,fold beff)))
+             modify $ \m -> m { batcheff = [] }
+     else return ()
+
+enbatch :: (ManC i r s k t) => Effect s -> ManM i r s k t ()
+enbatch e = do
+  beff' <- (e:) . batcheff <$> get
+  modify $ \m -> m { batcheff = beff' }
+  if length beff' >= 50
+     then sendBatch
+     else return ()
+
 workOnJob :: (ManC i r s k t) => ManM i r s k t ()
 workOnJob = manCurrentJob <$> get >>= \case
 
@@ -358,18 +376,17 @@ workOnJob = manCurrentJob <$> get >>= \case
                    else return ()
       Emit e m -> do
         case permitted' i e locks of
-          Right () -> do r2 <- snd <$> lift resolver
-                         bchk <- batcher <$> get
-                         beff <- batcheff <$> get
-                         if bchk e
-                            then do liftIO $ putStrLn "** Batched **"
-                                    if length beff >= 19
-                                       then do lift (emitSndOn (append r2 (i,fold (e:beff))))
-                                               modify $ \m -> m { batcheff = [] }
-                                       else modify $ \m -> m { batcheff = e:beff }
-                            else lift (emitSndOn (append r2 (i,e))) >> return ()
-                         -- modify (\m -> m {manTimeoutSize = max 1 (manTimeoutSize m - 1)})
-                         -- liftIO $ putStrLn "Emitted."
+          Right () -> do enbatch e
+                         -- r2 <- snd <$> lift resolver
+                         -- bchk <- batcher <$> get
+                         -- beff <- batcheff <$> get
+                         -- if bchk e
+                         --    then do liftIO $ putStrLn "** Batched **"
+                         --            if length beff >= 19
+                         --               then do lift (emitSndOn (append r2 (i,fold (e:beff))))
+                         --                       modify $ \m -> m { batcheff = [] }
+                         --               else modify $ \m -> m { batcheff = e:beff }
+                         --    else lift (emitSndOn (append r2 (i,e))) >> return ()
                          onRCI $ reportSuccess e
                          liftIO $ putStrLn "Emit!"
                          advJob m
@@ -461,6 +478,7 @@ grantLockReqs = do
   man <- get
   liftIO (getGrant (manRCIndex man)) >>= \case
     Just ((i2,c),rci') -> do 
+      sendBatch
       modify $ \m -> m { manRCIndex = rci' }
       lift . emitFstOn $ \ls -> return (grant (manId man) i2 ls)
       liftIO $ putStrLn "Granted lock."
