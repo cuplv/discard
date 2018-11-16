@@ -33,6 +33,7 @@ import Control.Concurrent.STM hiding (check)
 import qualified Control.Concurrent.STM as STM
 import System.IO (hFlush,stdout)
 import Data.Time.Clock
+import Data.Foldable (fold)
 
 import CARD.CvRDT
 import CARD.Network
@@ -129,7 +130,9 @@ data Manager i r s = Manager
   , manCurrentJob :: Workspace (Job s IO ())
   , manLatest :: TVar s
   , manRCIndex :: RCIndex i s (Job s IO ())
-  , grantMultiplex :: Int }
+  , grantMultiplex :: Int
+  , batcher :: Effect s -> Bool
+  , batcheff :: [Effect s] }
 
 type ManM i r s k t = StateT (Manager i r s) (CoreM ((),r) (CardState i r s) k t)
 
@@ -167,8 +170,9 @@ initManager :: (Ord s, ManC i r s () t)
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
             -> Int -- ^ Timeout unit size (microseconds)
+            -> (Effect s -> Bool) -- ^ Batching whitelist
             -> IO (ManagerConn i r s)
-initManager i os ds r s0 ts = do
+initManager i os ds r s0 ts bw = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -183,6 +187,8 @@ initManager i os ds r s0 ts = do
         latestState
         rci
         0
+        bw
+        []
       onUp = upWithSumms latestState ((),r) s0
   ti <- forkIO $ do
           runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
@@ -353,7 +359,15 @@ workOnJob = manCurrentJob <$> get >>= \case
       Emit e m -> do
         case permitted' i e locks of
           Right () -> do r2 <- snd <$> lift resolver
-                         lift (emitSndOn (append r2 (i,e)))
+                         bchk <- batcher <$> get
+                         beff <- batcheff <$> get
+                         if bchk e
+                            then do liftIO $ putStrLn "** Batched **"
+                                    if length beff >= 19
+                                       then do lift (emitSndOn (append r2 (i,fold (e:beff))))
+                                               modify $ \m -> m { batcheff = [] }
+                                       else modify $ \m -> m { batcheff = e:beff }
+                            else lift (emitSndOn (append r2 (i,e))) >> return ()
                          -- modify (\m -> m {manTimeoutSize = max 1 (manTimeoutSize m - 1)})
                          -- liftIO $ putStrLn "Emitted."
                          onRCI $ reportSuccess e

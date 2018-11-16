@@ -33,9 +33,10 @@ runNode :: (Ord s, ManC i (IpfsEG i) s () HttpT)
         -> NetConf i -- ^ Replica network
         -> s -- ^ Initial store value
         -> Int -- ^ Timeout unit size (microseconds)
+        -> (Effect s -> Bool)
         -> Script i (IpfsEG i) s a -- ^ Actions to perform
         -> IO a
-runNode i ipfsPort net s0 n script = do
+runNode i ipfsPort net s0 n bcheck script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
@@ -43,7 +44,7 @@ runNode i ipfsPort net s0 n script = do
   ipfsr <- mkIpfsEG "localhost" ipfsPort i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
-  man <- initManager i otherIds otherDests ipfsr s0 n
+  man <- initManager i otherIds otherDests ipfsr s0 n bcheck
   lt <- mkListener (mkSrc port) man
   res <- script i man
   killThread lt

@@ -12,7 +12,7 @@ module CARD.Store
   , Cr (..)
   , EGS
   , Summaries
-  , Effect
+  , Effect (..)
   , ef
   , ef0
   , (|<|)
