@@ -133,7 +133,8 @@ data Manager i r s = Manager
   , batcher :: Effect s -> Bool
   , batcheff :: [Effect s]
   , myTurn :: Bool
-  , turnTimer :: Maybe (TVar Bool) }
+  , turnTimer :: Maybe (TVar Bool)
+  , signalConref :: Conref s }
 
 type ManM i r s k t = StateT (Manager i r s) (CoreM ((),r) (CardState i r s) k t)
 
@@ -172,8 +173,9 @@ initManager :: (Ord s, ManC i r s () t)
             -> s -- ^ Initial store value
             -> Int -- ^ Timeout unit size (microseconds)
             -> (Effect s -> Bool) -- ^ Batching whitelist
+            -> Conref s
             -> IO (ManagerConn i r s)
-initManager i os ds r s0 ts bw = do
+initManager i os ds r s0 ts bw sigCon = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -195,6 +197,7 @@ initManager i os ds r s0 ts bw = do
         []
         turn
         Nothing
+        sigCon
       onUp = upWithSumms latestState ((),r) s0
   ti <- forkIO $ do
           if turn
@@ -309,7 +312,8 @@ handleLatest = do
                        modify (\m -> m { grantMultiplex = 0 })
                        lift (emitFstOn $ return . release i) >> return ()
                else do liftIO $ putStrLn "Taking and then releasing as signal >_<"
-                       lift (emitFstOn $ return . request i crEqv) >> releaseAll
+                       sigCon <- signalConref <$> get
+                       lift (emitFstOn $ return . request i sigCon) >> releaseAll
       releaseAll
       return ()
 
