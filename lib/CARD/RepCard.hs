@@ -131,7 +131,9 @@ data Manager i r s = Manager
   , manRCIndex :: RCIndex i s (Job s IO ())
   , grantMultiplex :: Int
   , batcher :: Effect s -> Bool
-  , batcheff :: [Effect s] }
+  , batcheff :: [Effect s]
+  , myTurn :: Bool
+  , turnTimer :: Maybe (TVar Bool) }
 
 type ManM i r s k t = StateT (Manager i r s) (CoreM ((),r) (CardState i r s) k t)
 
@@ -176,7 +178,10 @@ initManager i os ds r s0 ts bw = do
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
   rci <- newRCIndex (ms2s ts)
-  let manager = Manager
+  let turn = if and $ map (i <) os
+                then True
+                else False
+      manager = Manager
         eventQueue
         i
         os
@@ -188,14 +193,20 @@ initManager i os ds r s0 ts bw = do
         0
         bw
         []
+        turn
+        Nothing
       onUp = upWithSumms latestState ((),r) s0
   ti <- forkIO $ do
-          runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
+          if turn
+             then do putStrLn $ "My turn to start."
+                     runCoreM ((),r) Map.empty ds onUp (runStateT (setTurnTimer >> managerLoop) manager)
+             else runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
           return ()
   return $ ManagerConn eventQueue latestState ti
 
 managerLoop :: (ManC i r s k t) => ManM i r s k t ()
 managerLoop = do
+  -- takeTurn
   -- Handle latest event (incorp update or enque job)
   -- liftIO $ putStrLn "Handle latest..."
   handleLatest
@@ -216,6 +227,15 @@ managerLoop = do
   -- And loop
   managerLoop
 
+-- takeTurn :: (ManC i r s k t) => ManM i r s k t ()
+-- takeTurn = do
+--   turn <- myTurn <$> get
+--   i <- manId <$> get
+--   locks <- fst <$> lift check
+--   if turn && not (holding i locks)
+--      then lift (emitFstOn $ return . request i c) >> return ()
+--      else return ()
+
 onCurrent :: (ManC i r s k t) 
           => (Workspace (Job s IO ()) -> Workspace (Job s IO ())) 
           -> ManM i r s k t ()
@@ -230,21 +250,68 @@ onRCI f = do rci <- manRCIndex <$> get
 
 data ManEvent i r s = ManNew (Either (BMsg (CardState i r s)) 
                                      (Job s IO ())) 
-                    | ManRate (RCIndex i s (Job s IO ())) 
+                    | ManRate (RCIndex i s (Job s IO ()))
+                    | ManPass
+
+awaitTurnTimer :: (ManC i r s k t) => ManM i r s k t (STM (ManEvent i r s))
+awaitTurnTimer = do
+  turnTimer <$> get >>= \case
+    Just tt -> return $ const ManPass <$> (STM.check =<< readTVar tt)
+    Nothing -> return $ const ManPass <$> (STM.check =<< return False)
+
+
+setTurnTimer :: (ManC i r s k t) => ManM i r s k t ()
+setTurnTimer = do 
+  tt <- liftIO $ registerDelay 500000 -- 0.5s
+  modify $ \m -> m { turnTimer = Just tt }
 
 handleLatest :: (ManC i r s k t) => ManM i r s k t ()
 handleLatest = do
   man <- get
-  let updates = (ManRate <$> awaitTimeouts (manRCIndex man))
-                <|> (ManNew <$> readTQueue (manInbox man)) 
+  awtt <- awaitTurnTimer
+  let updates = awtt
+                <|> (ManRate <$> awaitTimeouts (manRCIndex man))
+                <|> (ManNew <$> readTQueue (manInbox man))
   lstm updates >>= \case
     ManNew (Right j) -> case j of
       _ -> lstm $ writeTQueue (manJobQueue man) j
-    ManNew (Left (BCast s)) -> 
-      lift (incorp s) >> return ()
+    ManNew (Left (BCast s)) -> do
+      prestate <- fst <$> lift check
+      lift (incorp s)
+      poststate <- fst <$> lift check
+      let [other] = manOthers man
+          self = manId man
+      if holding other prestate && not (holding other poststate) && prestate /= mempty
+         then do liftIO $ putStrLn "My turn!"
+                 modify $ \m -> m { myTurn = True }
+                 wr <- manWaitingRoom <$> get
+                 i <- manId <$> get
+                 let c = foldr (\(c',_) c -> c' |&| c) crT wr
+                 lift (emitFstOn $ return . request i c) >> return ()
+                 setTurnTimer
+         else return ()
     ManRate rci' -> do
       -- liftIO $ putStrLn "RateControl event."
       modify (\m -> m { manRCIndex = rci' })
+    ManPass -> do
+      liftIO $ putStrLn "Turn is finished."
+      modify (\m -> m { myTurn = False })
+      modify (\m -> m { turnTimer = Nothing })
+      i <- manId <$> get
+      let releaseAll = do
+            locks <- fst <$> lift check
+            if holding i locks
+               then do liftIO (putStrLn "Releasing locks...")
+                       mx <- grantMultiplex <$> get 
+                       if mx > 1
+                          then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
+                          else return ()
+                       modify (\m -> m { grantMultiplex = 0 })
+                       lift (emitFstOn $ return . release i) >> return ()
+               else do liftIO $ putStrLn "Taking and then releasing as signal >_<"
+                       lift (emitFstOn $ return . request i crEqv) >> releaseAll
+      releaseAll
+      return ()
 
 
 getWaiting :: (ManC i r s k t) => ManM i r s k t (Maybe (Job s IO ()))
@@ -279,7 +346,8 @@ putOnHold c fj = do
   i <- manId <$> get
   others <- manOthers <$> get
   locks <- fst <$> lift check
-  if not $ requested i c locks
+  turn <- myTurn <$> get
+  if (not $ requested i c locks) && turn
      then lift (emitFstOn $ return . request i c) >> return ()
      else return ()
   modify (\m -> m { manWaitingRoom = (c,fj) : manWaitingRoom m })
@@ -310,14 +378,14 @@ workOnJob = manCurrentJob <$> get >>= \case
     others <- manOthers <$> get
     locks <- fst <$> lift check
     case j of -- do work!
-      Request c f -> do
-        liftIO $ putStrLn "Handling nested request..."
-        if not $ requested i c locks
-           then lift (emitFstOn $ return . request i c) >> return ()
-           else if confirmed i others locks
-                   then do advJob . f =<< lstm . readTVar =<< manLatest <$> get
-                           workOnJob
-                   else return ()
+      -- Request c f -> do
+      --   liftIO $ putStrLn "Handling nested request..."
+      --   if not $ requested i c locks
+      --      then lift (emitFstOn $ return . request i c) >> return ()
+      --      else if confirmed i others locks
+      --              then do advJob . f =<< lstm . readTVar =<< manLatest <$> get
+      --                      workOnJob
+      --              else return ()
       Emit e m -> do
         case permitted' i e locks of
           Right () -> do enbatch e
@@ -340,16 +408,16 @@ workOnJob = manCurrentJob <$> get >>= \case
   Idle -> do -- No current job, try to pop from queue
     i <- manId <$> get
     locks <- fst <$> lift check
-    let releaseAll = 
-          if holding i locks
-             then do liftIO (putStrLn "Releasing locks...")
-                     mx <- grantMultiplex <$> get 
-                     if mx > 1
-                        then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
-                        else return ()
-                     modify (\m -> m { grantMultiplex = 0 })
-                     lift (emitFstOn $ return . release i) >> return ()
-             else return ()
+    -- let releaseAll = 
+    --       if holding i locks
+    --          then do liftIO (putStrLn "Releasing locks...")
+    --                  mx <- grantMultiplex <$> get 
+    --                  if mx > 1
+    --                     then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
+    --                     else return ()
+    --                  modify (\m -> m { grantMultiplex = 0 })
+    --                  lift (emitFstOn $ return . release i) >> return ()
+    --          else return ()
     -- Try waiting room first
     getWaiting >>= \case
       Just j -> onCurrent (initJob j) >> workOnJob
@@ -357,9 +425,9 @@ workOnJob = manCurrentJob <$> get >>= \case
         -- If no one is ready in waiting room, take from main queue
         aw <- anyWaiting
         -- If no one is in the waiting room at all, release all locks
-        if not aw
-           then releaseAll
-           else return ()
+        -- if not aw
+        --    then releaseAll
+        --    else return ()
         manJobQueue <$> get >>= lstm . tryReadTQueue >>= \case
           -- Send initial requests to waiting room
           Just (Request c fj) -> putOnHold c fj >> workOnJob
@@ -388,7 +456,7 @@ grantLockReqs = do
       sendBatch
       modify $ \m -> m { manRCIndex = rci' }
       lift . emitFstOn $ \ls -> return (grant (manId man) i2 ls)
-      liftIO $ putStrLn "Granted lock."
+      -- liftIO $ putStrLn "Granted lock."
       return ()
     Nothing -> return ()
 
