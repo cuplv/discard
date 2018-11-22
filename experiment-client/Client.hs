@@ -11,12 +11,14 @@ import qualified Data.ByteString.Lazy.Char8 as BC
 import Options.Applicative
 import Control.Concurrent.STM
 import Data.Map (Map)
+import System.IO (hFlush,stdout)
 import qualified Data.Map as Map
 import System.Random
 import Data.Time.Clock
 import Control.Concurrent (threadDelay,forkIO)
 import Data.List (genericLength)
 import System.Exit
+import Data.Foldable (fold)
 
 import CARD
 import CARD.Experiment
@@ -54,7 +56,7 @@ runExperiment :: ExpConf -> ExpNetConf String -> IO ()
 runExperiment ec enc = do
   let nc = getNetConf enc
       addrs = expAddrs enc
-      cmd = Launch ec nc
+      cmd = Launch (divRate enc ec) nc
   man <- newManager defaultManagerSettings
   let mkReq :: String -> IO (Int,String)
       mkReq addr = do
@@ -66,7 +68,8 @@ runExperiment ec enc = do
                                   Just n -> return (n,addr)
           c -> print c >> die "Oops"
   exps <- traverse mkReq addrs
-  threadDelay $ (expTime ec + 60) * 1000000
+  putStrLn "All nodes started experiment." >> hFlush stdout
+  threadDelay $ (expTime ec + 15) * 1000000
   let getRes :: (Int,String) -> IO ExpResult
       getRes (n,addr) = do
         ireq <- parseRequest addr
@@ -75,7 +78,11 @@ runExperiment ec enc = do
         case responseStatus $ resp of
           c | c == status200 -> case decode (responseBody resp) of
                                   Just d -> return d
-  results <- traverse getRes exps
-  let avg = sum (map expResultAvg (Map.elems results)) / genericLength (Map.elems results)
-  print results
-  putStrLn $ "Total average: " ++ show avg
+            | otherwise -> print c >> die "Oops"
+  results <- fold <$> traverse getRes exps
+  putStrLn $ "* Individual latencies"
+  mapM_ (\(s,l) -> putStrLn $ s ++ ": " ++ show l ++ " s") (Map.assocs (expAvgLatencies results))
+  putStrLn $ "* Total measures"
+  putStrLn $ "Total requests: " ++ show (totalReqs results) ++ " req"
+  putStrLn $ "True rate: " ++ show (trueReqRate ec results) ++ " req/s"
+  putStrLn $ "Avg latency: " ++ show (combinedAvgLatency results) ++ " s"

@@ -1,0 +1,7 @@
+- name: alpha
+  port: 23001
+  expPort: 24001
+
+- name: beta
+  port: 23002
+  expPort: 24002

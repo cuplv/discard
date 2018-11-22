@@ -59,9 +59,7 @@ put (IpfsHttp man host) obj = do
 -- | Get an IPFS object
 get :: IpfsHttp -> IpfsPath -> IO IpfsObject
 get (IpfsHttp man host) (IpfsPath hash) = do
-  putStrLn "Doing get..."
   fullReq <- parseRequest (host++"/api/v0/object/get?arg="++Text.unpack hash)
-  putStrLn "Finished get."
   resp <- decode . responseBody <$> httpLbs fullReq man
   case resp of
     Just obj -> return obj
