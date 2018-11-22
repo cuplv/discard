@@ -1,8 +1,7 @@
 # `card-systems` #
 
-A library and collection of runnable replica system examples, all
-implementing the [*conflict-aware* replicated datatype][1]
-programming/system model.
+A library implementing the Carol programming language, providing an
+eDSL for writing operations and a replica node that runs them.
 
 
 ## Quick start ##
@@ -12,8 +11,8 @@ First, get the project.
     $ git clone https://github.com/cuplv/card-systems
     $ cd card-systems
 
-Next, make sure you can build the project.  If you have the
-[`nix`](https://nixos.org) package manager, the process is simple:
+Next, build the project.  If you have the [`nix`](https://nixos.org)
+package manager, the process is simple:
 
     $ nix-env -i cabal2nix cabal-install
     $ cabal2nix --shell . > shell.nix
@@ -27,13 +26,11 @@ with it's API on port `5001` (the default).
 
     $ nix run nixpkgs.ipfs -c ipfs daemon --init
 
-Then, open three terminals, and run the following:
+Then, open two terminals, and run the following:
 
-    (term 1)$ cabal run -- -c example-network.yaml -i alpha
+    (term 1)$ cabal run cardr -- -c 2local.yaml -i alpha
 
-    (term 2)$ cabal run -- -c example-network.yaml -i beta
-
-    (term 3)$ cabal run -- -c example-network.yaml -i epsilon
+    (term 2)$ cabal run cardr -- -c 2local.yaml -i beta
 
 Now a node is running in each terminal.  Choose one and type `check`
 to see the current shared account value (0 to start).  Add money with
@@ -48,6 +45,7 @@ in [`./lib/CARD/LQ/Bank.hs`][3].
 
 Library documentation, which is still minimal and disorganized, can be
 compiled with `cabal haddock`.
+
 
 ## Alternate setup ##
 
