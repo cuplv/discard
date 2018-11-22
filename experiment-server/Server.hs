@@ -26,6 +26,8 @@ import CARD.Node
 
 ------------------------------------------------------------------------
 
+batchSize = 50 :: Int
+
 defaultBaseTimeout :: Int
 defaultBaseTimeout = 10000 -- 0.01s
 
@@ -68,12 +70,6 @@ experimentNode conf = do
                          (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) lastv resultsv) 
                          (resultsExp resultsv))
 
-bcheck = \case
-  Add _ -> True
-  _ -> False
-
-bcheck' (Effect es) = and (map bcheck es)
-
 startExp :: String -- ^ Node name
          -> Int -- ^ Port
          -> Int -- ^ Base timeout (microseconds)
@@ -93,7 +89,7 @@ startExp i ipfsPort tsize lastv resultsv (ec,nc) = do
       atomically $ swapTVar lastv (Just current)
       -- Start the experiment
       forkIO $ do 
-        results <- runNode i (ipfsPort) nc s0 tsize bcheck' (expScript ec)
+        results <- runNode i (ipfsPort) nc s0 tsize batchSize (expScript ec)
         atomically $ modifyTVar resultsv (Map.insert current results)
         putStrLn $ "Finished experiment " ++ show current
       putStrLn $ "Started experiment " ++ show current

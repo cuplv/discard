@@ -44,8 +44,6 @@ import CARD.RepCore
 import CARD.LQ
 import CARD.RateControl
 
-batchSize = 50 :: Int
-
 type CardState i r s = (Locks i s, Hist i r s)
 
 data Job s m a = 
@@ -130,8 +128,8 @@ data Manager i r s = Manager
   , manLatest :: TVar s
   , manRCIndex :: RCIndex i s (Job s IO ())
   , grantMultiplex :: Int
-  , batcher :: Effect s -> Bool
-  , batcheff :: [Effect s] }
+  , batcheff :: [Effect s]
+  , batchSize :: Int }
 
 type ManM i r s k t = StateT (Manager i r s) (CoreM ((),r) (CardState i r s) k t)
 
@@ -169,9 +167,9 @@ initManager :: (Ord s, ManC i r s () t)
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
             -> Int -- ^ Timeout unit size (microseconds)
-            -> (Effect s -> Bool) -- ^ Batching whitelist
+            -> Int
             -> IO (ManagerConn i r s)
-initManager i os ds r s0 ts bw = do
+initManager i os ds r s0 ts bsize = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -186,8 +184,8 @@ initManager i os ds r s0 ts bw = do
         latestState
         rci
         0
-        bw
         []
+        bsize
       onUp = upWithSumms latestState ((),r) s0
   ti <- forkIO $ do
           runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
@@ -296,9 +294,10 @@ sendBatch = do
 
 enbatch :: (ManC i r s k t) => Effect s -> ManM i r s k t ()
 enbatch e = do
+  bsize <- batchSize <$> get
   beff' <- (e:) . batcheff <$> get
   modify $ \m -> m { batcheff = beff' }
-  if length beff' >= batchSize
+  if length beff' >= bsize
      then sendBatch
      else return ()
 
