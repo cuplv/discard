@@ -45,7 +45,7 @@ confCLI = execParser $
         <*> option auto (long "ipfs-port" <> value 5001)
       misc = (fullDesc
               <> progDesc "Run a bank account CARD node"
-              <> header "cardr - a CARD demo")
+              <> header "discard-demo - a demo application for the Carol language")
   in info (parser <**> helper) misc
 
 node :: IO ()

@@ -1,4 +1,4 @@
-# Revision history for card-systems
+# Revision history for discard
 
 ## 0.1.0.0  -- YYYY-mm-dd
 
