@@ -6,7 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module CARD.Network 
+module Data.CvRDT.Broadcast 
   ( BMsg (..)
   , Transport (..)
   , Dest (..)

@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module CARD.RateControl
+module Network.Discard.RateControl
   ( RCIndex
   , newRCIndex
   , getRCBlocker
@@ -27,7 +27,7 @@ import GHC.Conc (forkIO,registerDelay,readTVar,TVar,threadDelay,ThreadId,killThr
 import Data.Time.Clock
 import Control.Monad.Trans
 
-import CARD.Store
+import Data.CARD
 
 lstm :: MonadIO m => STM a -> m a
 lstm = liftIO . atomically

@@ -4,7 +4,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module CARD.Lamport
+module Data.LamportClock
   ( LClock
   , tick
   , untick
@@ -17,7 +17,7 @@ import qualified Data.Map as Map
 import GHC.Generics
 import Data.Aeson
 
-import CARD.CvRDT
+import Data.CvRDT
 
 
 data LClock i = LClock (Map i Int) deriving (Show,Eq,Ord,Generic)

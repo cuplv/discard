@@ -1,4 +1,4 @@
-module CARD.EventGraph
+module Data.EventGraph
   ( Edge
   , getEvents
   , empty
@@ -21,7 +21,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Foldable (foldl')
 
-import CARD.EventGraph.Internal
+import Data.EventGraph.Internal
 
 -- | Fold over the elements of an event graph
 foldg :: (EG r d m) => r -> (s -> d -> s) -> s -> Edge r d -> m s

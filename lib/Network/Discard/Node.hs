@@ -3,7 +3,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module CARD.Node where
+module Network.Discard.Node where
 
 import System.IO
 import System.Exit
@@ -18,9 +18,12 @@ import qualified Data.Map as Map
 import Data.Yaml
 import System.Random
 
-import CARD
-import CARD.LQ.Bank
-import CARD.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
+import Lang.Carol
+import Lang.Carol.Bank
+import Data.CvRDT
+import Data.CvRDT.Broadcast
+import Network.Discard.RepCard
+import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
 
 type Script i r s a = 
   i 

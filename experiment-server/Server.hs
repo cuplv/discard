@@ -18,11 +18,13 @@ import Control.Concurrent (threadDelay,forkIO)
 import Data.List (genericLength)
 import Data.Foldable (foldl')
 
-import CARD
-import CARD.Experiment
-import CARD.EventGraph.Ipfs
-import CARD.LQ.Bank
-import CARD.Node
+import Lang.Carol
+import Lang.Carol.Bank
+
+import Network.Discard.Experiment
+import Network.Discard
+import Data.EventGraph.Ipfs
+import Data.CvRDT.Broadcast
 
 ------------------------------------------------------------------------
 

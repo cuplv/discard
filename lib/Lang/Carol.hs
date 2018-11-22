@@ -1,4 +1,4 @@
-module CARD.LQ 
+module Lang.Carol 
   ( LQ
   , HelpMe (..)
   , helpMe
@@ -7,10 +7,12 @@ module CARD.LQ
   , issue
   , query
   , assert
+  , module Data.CARD
 
   ) where
 
-import CARD.LQ.Internal
+import Lang.Carol.Internal
+import Data.CARD
 
 assert :: Bool -- ^ Assert condition
        -> String -- ^ Failure message

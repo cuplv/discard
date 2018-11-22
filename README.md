@@ -41,7 +41,7 @@ value to empty the account simultaneously on two nodes.
 
 You can edit [`./cardr/Main.hs`][2] to see how the library is used and
 make a more interesting example.  The bank operations are implemented
-in [`./lib/CARD/LQ/Bank.hs`][3].
+in [`./lib/Lang/Carol/Bank.hs`][3].
 
 Library documentation, which is still minimal and disorganized, can be
 compiled with `cabal haddock`.

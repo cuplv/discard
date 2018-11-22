@@ -1,7 +1,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module CARD.CvRDT
+module Data.CvRDT
   ( CvRDT (..)
   ) where
 

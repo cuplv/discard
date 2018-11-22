@@ -6,7 +6,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module CARD.EventGraph.Ipfs 
+module Data.EventGraph.Ipfs 
   ( IpfsEG
   , mkIpfsEG
   , mkIpfsEG'
@@ -26,8 +26,8 @@ import System.IO (hFlush,stdout)
 import Storage.Ipfs.Types
 import Storage.Ipfs.Http
 
-import CARD.EventGraph.Internal
-import CARD.Lamport
+import Data.EventGraph.Internal
+import Data.LamportClock
 
 
 data IpfsEG i = IpfsEG IpfsHttp i

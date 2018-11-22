@@ -20,10 +20,9 @@ import Options.Applicative
 import System.Random
 import Data.Time.Clock
 
-import CARD
-import CARD.Node
-import CARD.LQ.Bank
-import CARD.EventGraph.Ipfs (mkIpfsEG')
+import Lang.Carol
+import Lang.Carol.Bank
+import Network.Discard
 
 main :: IO ()
 main = node

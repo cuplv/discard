@@ -6,7 +6,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 
-module CARD.Store
+module Data.CARD
   ( Store (..)
   , Ef (..)
   , Cr (..)
@@ -40,7 +40,7 @@ import qualified Data.Map as Map
 import GHC.Generics
 import Data.Aeson
 
-import CARD.EventGraph
+import Data.EventGraph
 
 class (Eq (Ef s), Eq (Cr s), Ord (Ef s), Ord (Cr s)) => Store s where
   data Ef s

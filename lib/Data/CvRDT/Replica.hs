@@ -3,7 +3,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module CARD.RepCore 
+module Data.CvRDT.Replica
   ( Core
   , CoreM
   , CoreC
@@ -29,8 +29,8 @@ import qualified Data.Set as Set
 import Control.Concurrent.STM hiding (check)
 import Control.Monad.State
 
-import CARD.CvRDT
-import CARD.Network
+import Data.CvRDT
+import Data.CvRDT.Broadcast
 
 data Core r s k t = Core 
   { coreState :: s

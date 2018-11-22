@@ -1,8 +1,8 @@
 {-# LANGUAGE LambdaCase #-}
 
-module CARD.LQ.Bank where
+module Lang.Carol.Bank where
 
-import CARD
+import Lang.Carol
 
 deposit :: Int -> LQ Counter (Either String Int)
 deposit n = assert (n > 0) "Must deposit at least 1." $ do

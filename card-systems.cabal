@@ -10,27 +10,27 @@ extra-source-files:  ChangeLog.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     CARD
-                     , CARD.EventGraph.Internal
-                     , CARD.EventGraph.SetEG
-                     , CARD.EventGraph.Ipfs
-                     , CARD.LQ.Bank
-                     , CARD.Locks
-                     , CARD.CvRDT
-                     , CARD.RepCore
+  exposed-modules:     Data.EventGraph
+                     , Data.EventGraph.Internal
+                     , Data.EventGraph.SetEG
+                     , Data.EventGraph.Ipfs
+                     , Data.CARD
+                     , Data.CARD.Locks
+                     , Data.CvRDT
+                     , Data.CvRDT.Broadcast
+                     , Data.CvRDT.Replica
+                     , Data.LamportClock
+                     , Lang.Carol
+                     , Lang.Carol.Internal
+                     , Lang.Carol.Bank
+                     , Network.Discard
+                     , Network.Discard.Node
+                     , Network.Discard.RateControl
+                     , Network.Discard.RepCard
+                     , Network.Discard.Experiment
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
-                     , CARD.Lamport
-                     , CARD.Experiment
-                     , CARD.Node
-                     , CARD.LQ
-                     , CARD.LQ.Internal
-                     , CARD.RateControl
-  other-modules:       CARD.EventGraph
-                     , CARD.Network
-                     , CARD.Store
-                     , CARD.RepCard
   build-depends:       base >=4.10 && <4.13
                      , containers
                      , mtl

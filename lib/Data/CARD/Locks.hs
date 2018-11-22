@@ -7,7 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
-module CARD.Locks
+module Data.CARD.Locks
   ( Locks
   -- * Modify the locks
   , request
@@ -35,8 +35,8 @@ import Data.Foldable (fold,foldl')
 
 import Control.Monad.Free
 
-import CARD.CvRDT
-import CARD.Store
+import Data.CvRDT
+import Data.CARD
 
 data Locks i s = Locks 
   { locks :: Map i (Int, Conref s, Set i) } 

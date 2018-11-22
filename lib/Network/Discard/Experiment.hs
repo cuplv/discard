@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module CARD.Experiment
+module Network.Discard.Experiment
   ( defaultServerPort
   , ExpConf (..)
   , divRate
@@ -29,7 +29,8 @@ import qualified Data.Map as Map
 import Control.Monad (foldM)
 import Data.Time.Clock
 
-import CARD
+import Lang.Carol
+import Data.CvRDT.Broadcast
 
 -- expTime is a number of seconds
 data ExpConf = ExpConf 

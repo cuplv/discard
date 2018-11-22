@@ -4,7 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE StandaloneDeriving #-}
 
-module CARD.EventGraph.SetEG
+module Data.EventGraph.SetEG
   ( SetEG
   ) where
 
@@ -13,7 +13,7 @@ import qualified Data.Set as Set
 import Data.Maybe
 import Data.Aeson
 
-import CARD.EventGraph.Internal
+import Data.EventGraph.Internal
 
 data SetEG = SetEG deriving (Eq, Ord)
 

@@ -5,7 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
-module CARD.RepCard 
+module Network.Discard.RepCard 
   ( Job (..)
   , runLQM
   , runLQR
@@ -18,7 +18,7 @@ module CARD.RepCard
   , getLatest
   , killManager
 
-  , module CARD.RepCore
+  , module Data.CvRDT.Replica
 
   ) where
 
@@ -35,14 +35,14 @@ import System.IO (hFlush,stdout)
 import Data.Time.Clock
 import Data.Foldable (fold)
 
-import CARD.CvRDT
-import CARD.Network
-import CARD.EventGraph
-import CARD.Store
-import CARD.Locks
-import CARD.RepCore
-import CARD.LQ
-import CARD.RateControl
+import Data.CvRDT
+import Data.CvRDT.Broadcast
+import Data.CvRDT.Replica
+import Data.EventGraph
+import Data.CARD
+import Data.CARD.Locks
+import Lang.Carol
+import Network.Discard.RateControl
 
 type CardState i r s = (Locks i s, Hist i r s)
 

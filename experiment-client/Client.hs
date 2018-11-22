@@ -20,11 +20,11 @@ import Data.List (genericLength)
 import System.Exit
 import Data.Foldable (fold)
 
-import CARD
-import CARD.Experiment
-import CARD.EventGraph.Ipfs
-import CARD.LQ.Bank
-import CARD.Node
+import Lang.Carol
+import Lang.Carol.Bank
+import Network.Discard
+import Network.Discard.Experiment
+import Data.EventGraph.Ipfs
 
 main :: IO ()
 main = do 

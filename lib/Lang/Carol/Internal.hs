@@ -1,6 +1,6 @@
 {-# LANGUAGE LambdaCase #-}
 
-module CARD.LQ.Internal
+module Lang.Carol.Internal
   ( LQNode (..)
   , LQ
   , LQEnv
@@ -23,7 +23,7 @@ import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
 
-import CARD.Store
+import Data.CARD
 
 data LQNode s a = Issue (Effect s) a
                 | Query (Conref s) (s -> a)

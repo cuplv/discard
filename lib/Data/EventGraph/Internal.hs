@@ -7,7 +7,7 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module CARD.EventGraph.Internal
+module Data.EventGraph.Internal
   ( Edge (Multi,Single)
   , getEvents
   , flattenEdge
@@ -32,7 +32,7 @@ import qualified Data.Map as Map
 import GHC.Generics
 import Data.Aeson
 
-import CARD.CvRDT
+import Data.CvRDT
 
 -- | The "edge set" defining an event graph.  The edge set is the set
 -- of "latest" events, or those which do not have any outgoing edges
