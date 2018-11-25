@@ -17,7 +17,6 @@ module Data.EventGraph.Internal
   , append
   , contains
   , vis'
-  , merge
   , pop
   , edge
 
@@ -176,7 +175,7 @@ merge2 r g1@(Single _ g1' _) g2 =
      else merge2 r (flattenEdge g1) g2
 
 instance (EG r d m) => CvRDT r (Edge r d) m where
-  merge = merge2
+  cvmerge = merge2
   cvempty _ = return empty
 
 setLast :: Set a -> Maybe (a, Set a)

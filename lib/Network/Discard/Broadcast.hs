@@ -6,7 +6,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
 
-module Data.CvRDT.Broadcast 
+module Network.Discard.Broadcast 
   ( BMsg (..)
   , Transport (..)
   , Dest (..)
@@ -18,6 +18,7 @@ module Data.CvRDT.Broadcast
   , others
   , self
   , defaultPort
+  , broadcast
 
   ) where
 
@@ -114,3 +115,6 @@ instance (Ord i, FromJSON i) => FromJSON (NetConf i) where
             return (Map.insert name (host,port) m)
 
 defaultPort = 23001 :: Int
+
+broadcast :: (Monad (Res t), Transport t, Carries t s) => [Dest t] -> s -> Res t ()
+broadcast others s = mapM_ (flip send (BCast s)) others

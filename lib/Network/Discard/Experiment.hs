@@ -30,7 +30,7 @@ import Control.Monad (foldM)
 import Data.Time.Clock
 
 import Lang.Carol
-import Data.CvRDT.Broadcast
+import Network.Discard.Broadcast
 
 -- expTime is a number of seconds
 data ExpConf = ExpConf 

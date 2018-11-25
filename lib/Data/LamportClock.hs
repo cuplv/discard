@@ -3,6 +3,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE StandaloneDeriving #-}
 
 module Data.LamportClock
   ( LClock
@@ -52,7 +54,9 @@ upto i (LClock cl) = case Map.lookup i cl of
 
 data LHist i r d = LHist (LClock i) [(i,d)] (Maybe (Ref r))
 
-class LHistStore r where
+deriving instance (Eq i, Eq (Ref r), Eq d) => Eq (LHist i r d)
+
+class (Eq (Ref r)) => LHistStore r where
   data Ref r
   chunkSize :: r -> Int
 
@@ -66,13 +70,13 @@ putInOrder r e1 e2 = arb r e1 e2 >>= \case
   False -> return [e1,e2]
 
 instance (LHistM i r d m) => CvRDT r (LHist i r d) m where
-  merge r (LHist c1 ((i1,d1):e1) t1) (LHist c2 ((i2,d2):e2) t2)
+  cvmerge r (LHist c1 ((i1,d1):e1) t1) (LHist c2 ((i2,d2):e2) t2)
 
     | c1 == c2 = return (LHist c1 ((i1,d1):e1) t1)
 
-    | upto i1 c2 >= upto i1 c1 = merge r (LHist (untick i1 c1) e1 t1) (LHist c2 ((i2,d2):e2) t2)
-    | upto i2 c1 >= upto i2 c2 = merge r (LHist c1 ((i1,d1):e1) t1)   (LHist (untick i2 c2) e2 t2)
-    | otherwise = do (LHist c' e' t') <- merge r (LHist (untick i1 c1) e1 t1) (LHist (untick i2 c2) e2 t2)
+    | upto i1 c2 >= upto i1 c1 = cvmerge r (LHist (untick i1 c1) e1 t1) (LHist c2 ((i2,d2):e2) t2)
+    | upto i2 c1 >= upto i2 c2 = cvmerge r (LHist c1 ((i1,d1):e1) t1)   (LHist (untick i2 c2) e2 t2)
+    | otherwise = do (LHist c' e' t') <- cvmerge r (LHist (untick i1 c1) e1 t1) (LHist (untick i2 c2) e2 t2)
                      es <- putInOrder r (i1,d1) (i2,d2)
                      return (LHist (tick i1 . tick i2 $ c') (es ++ e') t')
 

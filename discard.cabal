@@ -17,13 +17,12 @@ library
                      , Data.CARD
                      , Data.CARD.Locks
                      , Data.CvRDT
-                     , Data.CvRDT.Broadcast
-                     , Data.CvRDT.Replica
                      , Data.LamportClock
                      , Lang.Carol
                      , Lang.Carol.Internal
                      , Lang.Carol.Bank
                      , Network.Discard
+                     , Network.Discard.Broadcast
                      , Network.Discard.Node
                      , Network.Discard.RateControl
                      , Network.Discard.RepCard

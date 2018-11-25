@@ -16,12 +16,13 @@ import Network.HTTP.Client
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Yaml
+import Data.Aeson.Types (ToJSONKey, FromJSONKey)
 import System.Random
 
 import Lang.Carol
 import Lang.Carol.Bank
 import Data.CvRDT
-import Data.CvRDT.Broadcast
+import Network.Discard.Broadcast
 import Network.Discard.RepCard
 import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
 
@@ -30,7 +31,7 @@ type Script i r s a =
   -> ManagerConn i r s
   -> IO a
 
-runNode :: (Ord s, ManC i (IpfsEG i) s () HttpT) 
+runNode :: (Ord s, ManC i (IpfsEG i) s (), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s))
         => i  -- ^ Name
         -> Int -- ^ IPFS Port
         -> NetConf i -- ^ Replica network

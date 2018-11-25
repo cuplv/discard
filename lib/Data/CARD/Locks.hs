@@ -61,8 +61,8 @@ instance (Ord i, Store s) => Semigroup (Locks i s) where
 instance (Ord i, Store s) => Monoid (Locks i s) where
   mempty = Locks (mempty)
 
-instance (Ord i, Store s, Applicative m) => CvRDT () (Locks i s) m where
-  merge _ s1 s2 = pure (s1 <> s2)
+instance (Ord i, Store s, Monad m) => CvRDT () (Locks i s) m where
+  cvmerge _ s1 s2 = pure (s1 <> s2)
   cvempty _ = pure mempty
 
 -- | Get the current request index for an identity

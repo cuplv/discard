@@ -7,7 +7,6 @@ module Data.EventGraph
   , append
   , contains
   , vis'
-  , merge
   , pop
   , edge
   , foldg
