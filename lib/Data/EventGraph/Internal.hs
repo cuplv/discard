@@ -98,8 +98,8 @@ class (EGB r, Monad m, Eq (Event r d), Ord (Event r d), Ord d) => EG r d m where
   multiVis r s1 s2 = filterSetM (\e -> not <$> vis' r e (Multi s2)) s1
 
 -- | Create a new event, appending it to the event graph
-append :: (EG r d m) => r -> d -> Edge r d -> m (Edge r d)
-append r d g = Single d g <$> event r g d
+appendEG :: (EG r d m) => r -> d -> Edge r d -> m (Edge r d)
+appendEG r d g = Single d g <$> event r g d
 
 -- | Create a graph with a single event as its edge
 liftEvent :: (Ord (Event r d)) => Event r d -> Edge r d
@@ -186,12 +186,16 @@ setLast xs = let (as,bs) = Set.splitAt (Set.size xs - 1) xs
 
 -- | Remove the (arbitrarily) last event from an event graph,
 -- returning its payload and the edge set of the rest of the graph.
-pop :: (EG r d m) => r -> Edge r d -> m (Maybe (d, Edge r d))
-pop r (Multi s) = mayMap f (setLast s)
+popEG :: (EG r d m) => r -> Edge r d -> m (Maybe (d, Edge r d))
+popEG r (Multi s) = mayMap f (setLast s)
   where f (e,es1) = do (d,es2) <- unpack r e
                        es3 <- merge2 r (Multi es1) es2
                        return (d,es3)
-pop r (Single d g _) = return $ Just (d,g)
+popEG r (Single d g _) = return $ Just (d,g)
+
+instance (EG r d m) => CvChain r (Edge r) d m where
+  pop = popEG
+  append = appendEG
 
 -- | Unpack all events in an edge set, returning them in their
 -- arbitrary order sequence

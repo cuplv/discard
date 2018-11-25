@@ -74,11 +74,11 @@ runQuery = (lift.lift =<<) . (ask <*>) . pure
 evalLQ :: (Monad m) => LQ s a -> LQEnv s m a
 evalLQ = \case
   Pure a -> return a
-  Free (Issue e t) -> evalLQ t <* modify (e |<|)
+  Free (Issue e t) -> evalLQ t <* modify (e |<<|)
   Free (Query c ft) -> evalLQ.ft =<< runQuery c
 
-issue :: (Store s) => Effect s -> LQ s ()
+issue :: (CARD s) => Effect s -> LQ s ()
 issue e = Free (Issue e (Pure ()))
 
-query :: (Store s) => Conref s -> LQ s s
+query :: (CARD s) => Conref s -> LQ s s
 query c = Free (Query c Pure)

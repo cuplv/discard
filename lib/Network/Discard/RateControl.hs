@@ -58,23 +58,23 @@ data RCIndex i s j = RCIndex
   , rciControl :: RateControl (i, Conref s) j }
 
 -- | Create a new index
-newRCIndex :: (Store s) => NominalDiffTime -> IO (RCIndex i s j)
+newRCIndex :: (CARD s) => NominalDiffTime -> IO (RCIndex i s j)
 newRCIndex t = do
   rc <- RateControl 1 True Nothing Open [] <$> newTQueueIO
   return $ RCIndex (RCSettings t) crT rc
 
-getRCBlocker :: (Store s) => RCIndex i s j -> Conref s
+getRCBlocker :: (CARD s) => RCIndex i s j -> Conref s
 getRCBlocker (RCIndex _ cb _) = cb
 
 -- | Report a failure.  The 'Conref s' should be the smallest relevant
 -- bit of the blocking lock.  The 'j' is the job that will be retried
 -- later.
-reportFailure :: (Store s) => Conref s -> j -> RCIndex i s j -> IO (RCIndex i s j)
+reportFailure :: (CARD s) => Conref s -> j -> RCIndex i s j -> IO (RCIndex i s j)
 reportFailure c j (RCIndex st cb rc) = RCIndex st (cb |&| c) <$> reportFailure' st j rc
 
 
 -- | Report a successful effect emission.
-reportSuccess :: (Store s) => Effect s -> RCIndex i s j -> IO (RCIndex i s j)
+reportSuccess :: (CARD s) => Effect s -> RCIndex i s j -> IO (RCIndex i s j)
 reportSuccess e (RCIndex st cb rc) = 
   if checkBlock cb e
      then do putStrLn ""
@@ -89,7 +89,7 @@ getRetry (RCIndex st cb rc) = getRetry' st rc >>= \case
   Just (j,rc') -> return (Just (j, RCIndex st cb rc'))
   Nothing -> return Nothing
 
-enqueGrant :: (Eq i, Store s) => (i,Conref s) -> RCIndex i s j -> IO (RCIndex i s j)
+enqueGrant :: (Eq i, CARD s) => (i,Conref s) -> RCIndex i s j -> IO (RCIndex i s j)
 enqueGrant g (RCIndex st cb rc) = do
   RCIndex st cb <$> enqueGrant' st g rc
 

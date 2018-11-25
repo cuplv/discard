@@ -6,6 +6,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Data.CARD.Locks
   ( Locks
@@ -21,6 +22,10 @@ module Data.CARD.Locks
   , holding
   , holding'
   , confirmed
+  -- * CvStore
+  , CvStore
+  , Hist
+  , evalHist
   ) where
 
 import Data.Map (Map)
@@ -45,7 +50,7 @@ data Locks i s = Locks
 instance (ToJSONKey i, ToJSON i, ToJSON (Cr s)) => ToJSON (Locks i s)
 instance (Ord i, FromJSONKey i, FromJSON i, Ord (Cr s), FromJSON (Cr s)) => FromJSON (Locks i s)
 
-instance (Ord i, Store s) => Semigroup (Locks i s) where
+instance (Ord i, CARD s) => Semigroup (Locks i s) where
   (<>) (Locks m1) (Locks m2) = 
     Locks $ foldl' (\m k -> case (Map.lookup k m1, Map.lookup k m2) of
       (Just (i1,c1,s1),Just (i2,c2,s2)) -> case compare i1 i2 of
@@ -58,25 +63,25 @@ instance (Ord i, Store s) => Semigroup (Locks i s) where
       (Nothing,Just v2) -> Map.insert k v2 m) 
                    mempty (nub $ Map.keys m1 ++ Map.keys m2)
 
-instance (Ord i, Store s) => Monoid (Locks i s) where
+instance (Ord i, CARD s) => Monoid (Locks i s) where
   mempty = Locks (mempty)
 
-instance (Ord i, Store s, Monad m) => CvRDT () (Locks i s) m where
+instance (Ord i, CARD s, Monad m) => CvRDT () (Locks i s) m where
   cvmerge _ s1 s2 = pure (s1 <> s2)
   cvempty _ = pure mempty
 
 -- | Get the current request index for an identity
-reqIndex :: (Ord i, Store s) => i -> Locks i s -> Int
+reqIndex :: (Ord i, CARD s) => i -> Locks i s -> Int
 reqIndex i (Locks m) = case Map.lookup i m of
                          Just (n,_,_) -> n
                          Nothing -> 0
 
 -- | Request a new/stronger lock
-request :: (Ord i, Store s) => i -> Conref s -> Locks i s -> Locks i s
+request :: (Ord i, CARD s) => i -> Conref s -> Locks i s -> Locks i s
 request i c m = m <> (Locks $ Map.singleton i (reqIndex i m, c, mempty))
 
 -- | Grant a request
-grant :: (Ord i, Store s) 
+grant :: (Ord i, CARD s) 
       => i -- ^ Granting identity
       -> i -- ^ Identity whose request is being granted
       -> Locks i s 
@@ -87,16 +92,16 @@ grant ig ir (Locks m) =
                                      else (n,c,s)) ir m
 
 -- | Release a lock
-release :: (Ord i, Store s) => i -> Locks i s -> Locks i s
+release :: (Ord i, CARD s) => i -> Locks i s -> Locks i s
 release i m = m <> (Locks $ Map.singleton i (reqIndex i m + 1, crT, mempty))
 
 -- | List all requests that 'i' has not granted
-ungranted :: (Ord i, Store s) => i -> Locks i s -> [(i,Conref s)]
+ungranted :: (Ord i, CARD s) => i -> Locks i s -> [(i,Conref s)]
 ungranted i (Locks m) = map (\(ir,(_,c,_)) -> (ir,c)) $ filter ug (Map.assocs m)
   where ug (ir,((_,c,s))) = i /= ir && not (i `Set.member` s) && c /= crT
 
 -- | Check if effect is blocked by current locks
-permitted :: (Ord i, Store s) => i -> Effect s -> Locks i s -> Bool
+permitted :: (Ord i, CARD s) => i -> Effect s -> Locks i s -> Bool
 permitted i e =
   not
   . or 
@@ -106,7 +111,7 @@ permitted i e =
 
 -- | Check if effect is blocked by current locks, returning the
 -- blocking 'Conref' if so.
-permitted' :: (Ord i, Store s) => i -> Effect s -> Locks i s -> Either (Conref s) ()
+permitted' :: (Ord i, CARD s) => i -> Effect s -> Locks i s -> Either (Conref s) ()
 permitted' i e ls = 
   let blockers = map (\(_,c,_) -> c) 
                  . filter (\(n,c,s) -> checkBlock c e && Set.member i s) 
@@ -118,7 +123,7 @@ permitted' i e ls =
        bs -> Left (fold bs)
 
 -- | Check if lock has been requested
-requested :: (Ord i, Store s) => i -> Conref s -> Locks i s -> Bool
+requested :: (Ord i, CARD s) => i -> Conref s -> Locks i s -> Bool
 requested i c1 (Locks m) = case Map.lookup i m of
   Just (_,c2,_) -> c2 `impl` c1
   Nothing -> if c1 == crT
@@ -126,7 +131,7 @@ requested i c1 (Locks m) = case Map.lookup i m of
                 else False
 
 -- | Check if node 'i' is holding any locks
-holding :: (Ord i, Store s) => i -> Locks i s -> Bool
+holding :: (Ord i, CARD s) => i -> Locks i s -> Bool
 holding i (Locks m) = case Map.lookup i m of
   Just (_,c,_) -> if c == crT
                      then False
@@ -134,14 +139,14 @@ holding i (Locks m) = case Map.lookup i m of
   Nothing -> False
 
 -- | Return exactly the lock that 'i' is holding
-holding' :: (Ord i, Store s) => i -> Locks i s -> Conref s
+holding' :: (Ord i, CARD s) => i -> Locks i s -> Conref s
 holding' i (Locks m) = case Map.lookup i m of
   Just (_,c,_) -> c
   Nothing -> crT
 
 -- | Check if currently requested lock has been confirmed by all
 -- participating identities
-confirmed :: (Ord i, Store s) 
+confirmed :: (Ord i, CARD s) 
           => i -- ^ Identity to check the requested lock of
           -> [i] -- ^ List of other participating identities
           -> Locks i s 
@@ -152,3 +157,23 @@ confirmed self others (Locks m) =
       c == crT 
       || Set.fromList others `Set.isSubsetOf` s
     Nothing -> True
+
+---
+
+type Hist c i s = c (i, Effect s)
+
+evalHist :: (CARD s, CvChain r c (i, Effect s) m) 
+         => r 
+         -> s 
+         -> Hist c i s 
+         -> Map (Hist c i s) s 
+         -> m s
+evalHist r s0 c0 summs = 
+  foldlC 
+    r 
+    (\s (_,e) -> return $ runEffect s e)
+    (\c -> return $ Map.lookup c summs)
+    s0
+    c0
+
+type CvStore (c :: * -> *) i s = (Locks i s, Hist c i s)

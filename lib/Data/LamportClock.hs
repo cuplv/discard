@@ -55,6 +55,7 @@ upto i (LClock cl) = case Map.lookup i cl of
 data LHist i r d = LHist (LClock i) [(i,d)] (Maybe (Ref r))
 
 deriving instance (Eq i, Eq (Ref r), Eq d) => Eq (LHist i r d)
+deriving instance (Ord i, Ord (Ref r), Ord d) => Ord (LHist i r d)
 
 class (Eq (Ref r)) => LHistStore r where
   data Ref r
@@ -69,7 +70,7 @@ putInOrder r e1 e2 = arb r e1 e2 >>= \case
   True -> return [e2,e1]
   False -> return [e1,e2]
 
-instance (LHistM i r d m) => CvRDT r (LHist i r d) m where
+instance (Ord (LHist i r d), LHistM i r d m) => CvRDT r (LHist i r d) m where
   cvmerge r (LHist c1 ((i1,d1):e1) t1) (LHist c2 ((i2,d2):e2) t2)
 
     | c1 == c2 = return (LHist c1 ((i1,d1):e1) t1)

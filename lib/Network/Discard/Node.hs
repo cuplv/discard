@@ -22,23 +22,25 @@ import System.Random
 import Lang.Carol
 import Lang.Carol.Bank
 import Data.CvRDT
+import Data.CARD.Locks
+import Data.EventGraph (Edge)
 import Network.Discard.Broadcast
 import Network.Discard.RepCard
 import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
 
-type Script i r s a = 
+type Script r c i s a = 
   i 
-  -> ManagerConn i r s
+  -> ManagerConn c i s
   -> IO a
 
-runNode :: (Ord s, ManC i (IpfsEG i) s (), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s))
+runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
         => i  -- ^ Name
         -> Int -- ^ IPFS Port
         -> NetConf i -- ^ Replica network
         -> s -- ^ Initial store value
         -> Int -- ^ Timeout unit size (microseconds)
-        -> Int
-        -> Script i (IpfsEG i) s a -- ^ Actions to perform
+        -> Int -- ^ Batch size
+        -> Script (IpfsEG i) c i s a -- ^ Actions to perform
         -> IO a
 runNode i ipfsPort net s0 n batchSize script = do
   port <- case self i net of
@@ -55,9 +57,9 @@ runNode i ipfsPort net s0 n batchSize script = do
   killManager man
   return res
 
-mkListener :: (Carries HttpT (CardState i r s))
+mkListener :: (Carries HttpT (CvStore c i s))
            => Src HttpT 
-           -> ManagerConn i r s
+           -> ManagerConn c i s
            -> IO ThreadId
 mkListener src man = 
   forkIO (listen src (\m -> giveUpdate m man 

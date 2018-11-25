@@ -123,7 +123,7 @@ stamp n q = do tm <- getCurrentTime
 
 timeConv = fromRational.toRational
 
-expScript :: ExpConf -> Script String (IpfsEG i) Counter ExpResult
+expScript :: ExpConf -> Script (IpfsEG i) c String Counter ExpResult
 expScript econf i man = do
   startQ <- newTQueueIO :: IO (TQueue ((Int,String),UTCTime))
   endQ <- newTQueueIO :: IO (TQueue (Int,UTCTime))

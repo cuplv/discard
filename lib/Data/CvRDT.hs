@@ -19,11 +19,15 @@ module Data.CvRDT
   , emitSnd
   , emitFstOn
   , emitSndOn
+  -- * CvRDT sub-classes
+  , CvChain (..)
+  , foldlC
   ) where
 
 import Control.Monad.State
+import Data.Foldable (foldlM)
 
-class (Eq s, Monad m) => CvRDT r s m where
+class (Ord s, Monad m) => CvRDT r s m where
   cvmerge :: r -> s -> s -> m s
   cvempty :: r -> m s
 
@@ -132,3 +136,33 @@ emitSndOn :: (CvRDT r1 s1 m, CvRDT r2 s2 m)
           => (s2 -> m s2) 
           -> CvRepCmd (r1,r2) (s1,s2) k m s2
 emitSndOn f = emitSnd =<< lift . f =<< snd <$> check
+
+-- | A "convergent sequence" in which merging preserves the relative
+-- order of all elements (and does not duplicate shared sub-chains).
+class (CvRDT r (c l) m) => CvChain r c l m where
+  -- | Remove the last link from the chain, or return 'Nothing' if the
+  -- chain is empty.
+  pop :: r -> c l -> m (Maybe (l,c l))
+  append :: r -> l -> c l -> m (c l)
+
+-- | Perform a left-fold over a 'CvChain', using the provided
+-- "shortcut action" to avoid loading the entire chain if possible.
+-- 
+-- The shortcut action is applied to each chain prefix as links are
+-- popped off the end; if the action ever produces a 'Just' value,
+-- that value will be used in place of the provided initial 'a' value,
+-- and the fold will skip the links remaining in matched prefix.
+foldlC :: (CvChain r c l m) 
+       => r -- ^ Resolver
+       -> (a -> l -> m a) -- ^ Left-fold update action
+       -> (c l -> m (Maybe a)) -- ^ Shortcut action
+       -> a -- ^ Initial value
+       -> c l -- ^ Chain to fold over
+       -> m a
+foldlC r f short a0 c0 = 
+  let load c ls = pop r c >>= \case
+        Just (l,c') -> short c' >>= \case
+          Just a -> foldlM f a (l:ls)
+          Nothing -> load c' (l:ls)
+        Nothing -> foldlM f a0 ls
+  in load c0 []
