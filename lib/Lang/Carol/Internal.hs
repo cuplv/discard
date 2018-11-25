@@ -22,6 +22,7 @@ import System.Exit
 import Control.Monad.Free
 import Control.Monad.Reader
 import Control.Monad.State
+import Control.Monad.Cont
 
 import Data.CARD
 
@@ -82,3 +83,13 @@ issue e = Free (Issue e (Pure ()))
 
 query :: (Store s) => Conref s -> LQ s s
 query c = Free (Query c Pure)
+
+data EvalQ s a = EvalQ (Conref s) (s -> LQ s a)
+
+evalCPS :: (Monad m) => Effect s -> LQ s a -> ContT (a, Effect s) m (EvalQ s a)
+evalCPS e term = case term of
+  Pure a -> ContT (const (return (a,e)))
+  Free (Issue e' t) -> evalCPS (e' |<| e) t
+  Free (Query c ft) -> mapContT (\r -> do (a,e') <- r
+                                          return (a, e' |<| e)) 
+                                (ContT (\h -> h (EvalQ c ft)))
