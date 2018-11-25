@@ -1,20 +1,22 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Data.CvRDT
   ( CvRDT (..)
-  , CvReplica
+  -- * Core replica logic for hosting a CvRDT
   , CvRepCmd
-  , runCvReplica
-  , bcast
+  , runCvRep
   , check
-  , checkMeta
-  , resolver
   , incorp
   , emit
+  , emitOn
+  , bcast
+  , checkMeta
+  , resolver
+  -- * Extra convenience commands
   , emitFst
   , emitSnd
-  , emitOn
   , emitFstOn
   , emitSndOn
   ) where
@@ -38,79 +40,95 @@ data CvReplica r s k m = CvReplica
 
 type CvRepCmd r s k m = StateT (CvReplica r s k m) m
 
-runCvReplica :: (CvRDT r s m)
-             => r -- ^ Resolver
-             -> k -- ^ Initial meta-state
-             -> (s -> m ()) -- ^ Broadcast action
-             -> (s -> k -> m k) -- ^ On-update action
-             -> StateT (CvReplica r s k m) m a -- ^ Command
-             -> m a
-runCvReplica r k bc ou cmd = do 
+runCvRep :: (CvRDT r s m)
+         => r -- ^ Resolver
+         -> k -- ^ Initial meta-state
+         -> (s -> m ()) -- ^ Broadcast action
+         -> (s -> k -> m k) -- ^ On-update action
+         -> CvRepCmd r s k m a -- ^ Command script
+         -> m a
+runCvRep r k bc ou cmd = do 
   s0 <- cvempty r
   fst <$> runStateT cmd (CvReplica s0 k r ou bc)
 
-bcast :: (CvRDT r s m) => StateT (CvReplica r s k m) m ()
+-- | Broadcast the current state.
+bcast :: (CvRDT r s m) => CvRepCmd r s k m ()
 bcast = do s <- cvrState <$> get
            bf <- cvrBroadcast <$> get
            lift $ bf s
 
-check :: (Monad m) => StateT (CvReplica r s k m) m s
+-- | Get the current state.
+check :: (Monad m) => CvRepCmd r s k m s
 check = cvrState <$> get
 
-resolver :: (CvRDT r s m) => StateT (CvReplica r s k m) m r
+-- | Get the state resolver.
+resolver :: (CvRDT r s m) => CvRepCmd r s k m r
 resolver = cvrResolver <$> get
 
-checkMeta :: (CvRDT r s m) => StateT (CvReplica r s k m) m k
+-- | Get the current meta-state.
+checkMeta :: (CvRDT r s m) => CvRepCmd r s k m k
 checkMeta = cvrMetaState <$> get
 
-updateMeta :: (CvRDT r s m) => StateT (CvReplica r s k m) m ()
+-- | Rerun the meta update action on the current state.
+updateMeta :: (CvRDT r s m) => CvRepCmd r s k m ()
 updateMeta = do 
   rep <- get
   k' <- lift$ (cvrOnUpdate rep) (cvrState rep) (cvrMetaState rep)
   put $ rep { cvrMetaState = k' }
 
-incorp :: (CvRDT r s m) => s -> StateT (CvReplica r s k m) m (s,Bool)
+-- | Merge a state into the replica's current state.  The return value
+-- is the new combined state, or 'Nothing' if the merge made no
+-- change.
+incorp :: (CvRDT r s m) => s -> CvRepCmd r s k m (Maybe s)
 incorp s2 = do 
   rep <- get
   s3 <- lift$ cvmerge (cvrResolver rep) (cvrState rep) s2
   if s3 /= cvrState rep
      then do put $ rep { cvrState = s3 }
              updateMeta
-             return (s3,True)
-     else return (s3,False)
+             return (Just s3)
+     else return Nothing
 
-emit :: (CvRDT r s m) => s -> StateT (CvReplica r s k m) m s
-emit s = do (s',change) <- incorp s
-            if change
-               then bcast
-               else return ()
-            return s'
+-- | Merge a new state into the replica's current state and broadcast
+-- the new current state (only if it has changed).  The return value
+-- is the new current state.
+emit :: (CvRDT r s m) => s -> CvRepCmd r s k m s
+emit s = incorp s >>= \case
+  Just s' -> bcast >> return s'
+  Nothing -> check
 
+-- | 'emit' an update to only the first component of a pair-state.
 emitFst :: (CvRDT r1 s1 m, CvRDT r2 s2 m) 
         => s1 
-        -> StateT (CvReplica (r1,r2) (s1,s2) k m) m s1
+        -> CvRepCmd (r1,r2) (s1,s2) k m s1
 emitFst s1 = do 
   res <- snd . cvrResolver <$> get
   s2 <- lift$ cvempty res
   fst <$> emit (s1,s2)
 
+-- | 'emit' an update to only the second component of a pair-state.
 emitSnd :: (CvRDT r1 s1 m, CvRDT r2 s2 m) 
         => s2 
-        -> StateT (CvReplica (r1,r2) (s1,s2) k m) m s2
+        -> CvRepCmd (r1,r2) (s1,s2) k m s2
 emitSnd s2 = do 
   res <- fst . cvrResolver <$> get
   s1 <- lift$ cvempty res
   snd <$> emit (s1,s2)
 
-emitOn :: (CvRDT r s m) => (s -> m s) -> StateT (CvReplica r s k m) m s
+-- | Run an action on the current state, incorporating and emitting
+-- its result as the new current state.  The return value is the new
+-- current state.
+emitOn :: (CvRDT r s m) => (s -> m s) -> CvRepCmd r s k m s
 emitOn f = emit =<< lift . f =<< check
 
+-- | 'emitOn' for only the first component of a pair-state.
 emitFstOn :: (CvRDT r1 s1 m, CvRDT r2 s2 m)
           => (s1 -> m s1) 
-          -> StateT (CvReplica (r1,r2) (s1,s2) k m) m s1
+          -> CvRepCmd (r1,r2) (s1,s2) k m s1
 emitFstOn f = emitFst =<< lift . f =<< fst <$> check
 
+-- | 'emitOn' for only the second component of a pair-state.
 emitSndOn :: (CvRDT r1 s1 m, CvRDT r2 s2 m)
           => (s2 -> m s2) 
-          -> StateT (CvReplica (r1,r2) (s1,s2) k m) m s2
+          -> CvRepCmd (r1,r2) (s1,s2) k m s2
 emitSndOn f = emitSnd =<< lift . f =<< snd <$> check

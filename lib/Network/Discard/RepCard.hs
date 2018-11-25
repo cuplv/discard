@@ -187,7 +187,7 @@ initManager i os ds r s0 ts bsize = do
         bsize
       onUp = upWithSumms latestState ((),r) s0
   ti <- forkIO $ do
-          runCvReplica 
+          runCvRep
             ((),r) 
             Map.empty 
             bc
