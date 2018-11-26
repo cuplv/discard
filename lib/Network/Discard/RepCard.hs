@@ -34,7 +34,7 @@ import Data.Time.Clock
 import Data.Foldable (fold)
 
 import Data.CvRDT
-import Data.CARD.Locks
+import Data.CARD.Store
 import Lang.Carol
 import Network.Discard.RateControl
 import Network.Discard.Broadcast
@@ -58,10 +58,6 @@ handleQ fin latest = \case
     | otherwise -> return (Emit e (return finish))
     where finish = Finish (fin r)
 
--- | Run an operation, handing it off the store manager if it is not
--- trivial, and perform some final action when it is complete.  This
--- action may be performed on either the calling thread or the manager
--- thread.
 handleQM :: (CARD s)
          => (a -> IO ()) -- ^ Action to take on completion
          -> ManagerConn i r s -- ^ Manager to handle if necessary
@@ -71,8 +67,6 @@ handleQM fin man h = handleQ fin (getLatest man) h >>= \case
   Finish m -> m
   j -> giveJob j man
 
--- | Run an operation, handing it off the store manager if it is not
--- trivial, and return the result to the original caller
 handleQR :: (CARD s)
          => ManagerConn i r s
          -> HelpMe (Conref s) s (a, Effect s)
@@ -83,13 +77,19 @@ handleQR man h = do
   handleQM fin man h
   lstm $ takeTMVar tmv
 
+-- | Run an operation, handing it off the store manager if it is not
+-- trivial, and perform some final action when it is complete.  This
+-- action may be performed on either the calling thread or the manager
+-- thread.
 runLQM :: (CARD s) 
        => ManagerConn i r s 
-       -> (a -> IO ()) 
-       -> LQ s a 
+       -> (a -> IO ()) -- ^ Final action to execute on completion
+       -> LQ s a -- ^ Operation to run, feeding the final action
        -> IO ()
 runLQM man fin t = handleQM fin man (runLQ' t)
 
+-- | Run an operation, handing it off the store manager if it is not
+-- trivial, and return the result to the original caller
 runLQR :: (CARD s)
        => ManagerConn i r s
        -> LQ s a
@@ -112,7 +112,7 @@ failJob (Working j0 _) = Idle
 finishJob (Working _ _) = Idle
 
 data Manager c i s = Manager
-  { manInbox :: TQueue (Either (BMsg (CvStore c i s)) (Job s IO ()))
+  { manInbox :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
   , manId :: i
   , manOthers :: [i]
   , manJobQueue :: TQueue (Job s IO ())
@@ -124,17 +124,17 @@ data Manager c i s = Manager
   , batcheff :: [Effect s]
   , batchSize :: Int }
 
-type ManM r c i s k = StateT (Manager c i s) (CvRepCmd ((),r) (CvStore c i s) k IO)
+type ManM r c i s k = StateT (Manager c i s) (CvRepCmd ((),r) (Store c i s) k IO)
 
 class (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) => ManC r c i s k
 instance (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) => ManC r c i s k
 
 data ManagerConn c i s = ManagerConn 
-  { eventQueue :: TQueue (Either (BMsg (CvStore c i s)) (Job s IO ()))
+  { eventQueue :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
   , latestStoreVal :: TVar s
   , manLoopThreadId :: ThreadId }
 
-giveUpdate :: BMsg (CvStore c i s) -> ManagerConn c i s -> IO ()
+giveUpdate :: BMsg (Store c i s) -> ManagerConn c i s -> IO ()
 giveUpdate m (ManagerConn q _ _) = lstm $ writeTQueue q (Left m)
 
 giveJob :: Job s IO () -> ManagerConn c i s -> IO ()
@@ -153,7 +153,7 @@ ms2s ms = fromIntegral ms / 1000000
 -- | Initialize a replica manager.  This returns a 'TQueue' for
 -- updates from other replicas and jobs from other threads, and a
 -- 'TVar' which can be read to get the latest calculated store value.
-initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (CvStore c i s), Res t ~ IO)
+initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Res t ~ IO)
             => i -- ^ This replica's ID
             -> [i] -- ^ Other replicas' IDs
             -> [Dest t] -- ^ Broadcast targets
@@ -225,7 +225,7 @@ onRCI f = do rci <- manRCIndex <$> get
              rci' <- liftIO (f rci)
              modify (\m -> m {manRCIndex = rci' })
 
-data ManEvent c i s = ManNew (Either (BMsg (CvStore c i s)) 
+data ManEvent c i s = ManNew (Either (BMsg (Store c i s)) 
                                      (Job s IO ())) 
                     | ManRate (RCIndex i s (Job s IO ())) 
 

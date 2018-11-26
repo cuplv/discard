@@ -16,20 +16,23 @@ library
                      , Data.EventGraph.Ipfs
                      , Data.CARD
                      , Data.CARD.Locks
+                     , Data.CARD.Store
                      , Data.CvRDT
                      , Data.LamportClock
                      , Lang.Carol
                      , Lang.Carol.Internal
                      , Lang.Carol.Bank
                      , Network.Discard
-                     , Network.Discard.Broadcast
-                     , Network.Discard.Node
-                     , Network.Discard.RateControl
-                     , Network.Discard.RepCard
                      , Network.Discard.Experiment
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
+
+  other-modules:       Network.Discard.Node
+                     , Network.Discard.Broadcast
+                     , Network.Discard.RateControl
+                     , Network.Discard.RepCard
+
   build-depends:       base >=4.10 && <4.13
                      , containers
                      , mtl

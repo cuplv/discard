@@ -22,10 +22,6 @@ module Data.CARD.Locks
   , holding
   , holding'
   , confirmed
-  -- * CvStore
-  , CvStore
-  , Hist
-  , evalHist
   ) where
 
 import Data.Map (Map)
@@ -157,23 +153,3 @@ confirmed self others (Locks m) =
       c == crT 
       || Set.fromList others `Set.isSubsetOf` s
     Nothing -> True
-
----
-
-type Hist c i s = c (i, Effect s)
-
-evalHist :: (CARD s, CvChain r c (i, Effect s) m) 
-         => r 
-         -> s 
-         -> Hist c i s 
-         -> Map (Hist c i s) s 
-         -> m s
-evalHist r s0 c0 summs = 
-  foldlC 
-    r 
-    (\s (_,e) -> return $ runEffect s e)
-    (\c -> return $ Map.lookup c summs)
-    s0
-    c0
-
-type CvStore (c :: * -> *) i s = (Locks i s, Hist c i s)

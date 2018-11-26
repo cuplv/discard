@@ -3,7 +3,13 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleContexts #-}
 
-module Network.Discard.Node where
+module Network.Discard.Node
+  ( Script
+  , runLQR
+  , runLQM
+  , ManagerConn
+  , runNode
+  ) where
 
 import System.IO
 import System.Exit
@@ -19,20 +25,27 @@ import Data.Yaml
 import Data.Aeson.Types (ToJSONKey, FromJSONKey)
 import System.Random
 
-import Lang.Carol
-import Lang.Carol.Bank
 import Data.CvRDT
-import Data.CARD.Locks
+import Data.CARD.Store
 import Data.EventGraph (Edge)
+
 import Network.Discard.Broadcast
 import Network.Discard.RepCard
 import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
 
+-- | A program to run on a replica node, which has access to the
+-- state-management thread via the 'ManagerConn' in order to execute
+-- non-trivial operations.
 type Script r c i s a = 
   i 
   -> ManagerConn c i s
   -> IO a
 
+-- | Run a complete replica node, establishing network and state
+-- management threads, and execute a replica script on it.
+--
+-- If/when the script terminates, the replica node will be torn down
+-- and background threads killed.
 runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
         => i  -- ^ Name
         -> Int -- ^ IPFS Port
@@ -57,7 +70,7 @@ runNode i ipfsPort net s0 n batchSize script = do
   killManager man
   return res
 
-mkListener :: (Carries HttpT (CvStore c i s))
+mkListener :: (Carries HttpT (Store c i s))
            => Src HttpT 
            -> ManagerConn c i s
            -> IO ThreadId

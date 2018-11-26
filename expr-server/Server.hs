@@ -23,7 +23,6 @@ import Lang.Carol.Bank
 
 import Network.Discard.Experiment
 import Network.Discard
-import Network.Discard.Broadcast
 import Data.EventGraph.Ipfs
 
 ------------------------------------------------------------------------

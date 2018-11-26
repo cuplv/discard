@@ -91,6 +91,8 @@ instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
   listen (HttpSrc p) handle = do
     runSettings (setHost "!6" . setPort p $ defaultSettings) (msgGetter handle)
 
+-- | A 'NetConf' associates a 'String' hostname and 'Int' port number
+-- to a set of 'i'-named replica nodes.
 data NetConf i = NetConf (Map i (String, Int)) deriving (Show,Eq,Ord)
 
 others :: (Ord i) => i -> NetConf i -> [(i,(String,Int))]

@@ -1,8 +1,8 @@
 module Network.Discard
   ( module Network.Discard.Node
-  , module Network.Discard.RepCard
-
+  -- * Networking configuration
+  , NetConf (..)
   ) where
   
 import Network.Discard.Node
-import Network.Discard.RepCard
+import Network.Discard.Broadcast

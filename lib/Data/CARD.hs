@@ -124,14 +124,16 @@ impl (Conref c1) (Conref c2) = and (Set.map (`Set.member` c1) c2)
 impl EQV _ = True
 impl (Conref _) EQV = False
 
--- | Check if conref blocks effect, returning 'True' it does block
+-- | Check if conref blocks effect, returning 'True' when it does
+-- block.
 checkBlock :: (CARD s) => Conref s -> Effect s -> Bool
 checkBlock (Conref cs) (Effect es) = or (defineConflict <$> (Set.toList cs) <*> es)
 checkBlock EQV (Effect es) = case es of
                                [] -> False
                                _ -> True
 
--- | Check, returning the 'Left' value if there is a block
+-- | Check if conref blocks effect, returning the 'Left' value if
+-- there is a block.
 checkBlock' :: (CARD s) => Conref s -> Effect s -> Either (Conref s) ()
 checkBlock' (Conref cs) (Effect es) = 
   if or (defineConflict <$> (Set.toList cs) <*> es)
