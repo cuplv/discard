@@ -4,12 +4,16 @@ module Data.CARD.Store
   ( Hist
   , evalHist
   , Store
+  , locks
+  , hist
+  , histAppend
   -- * Convenient re-exports
   , module Data.CARD
   , module Data.CARD.Locks
   ) where
 
 import Data.Map (Map,lookup)
+import Control.Lens
 
 import Data.CvRDT
 import Data.CARD
@@ -42,3 +46,19 @@ evalHist r s0 c0 summs =
 -- distributed lock state (the 'Locks') and an event history (the
 -- 'Hist').
 type Store c i s = (Locks i s, Hist c i s)
+
+locks :: Lens' (Store c i s) (Locks i s)
+locks = _1
+
+hist :: Lens' (Store c i s) (Hist c i s)
+hist = _2
+
+-- | Emit a store effect, tagged with a replica ID.
+histAppend :: (Ord i, CARD s, CvChain r c (i, Effect s) m) 
+           => i 
+           -> Effect s 
+           -> CvRepCmd r (Store c i s) k m ()
+histAppend i e = do 
+  r <- use resolver
+  emitOn' hist $ append r (i,e)
+  return ()

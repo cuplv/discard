@@ -50,9 +50,10 @@ instance (Ord i, CARD s) => Semigroup (Locks i s) where
   (<>) (Locks m1) (Locks m2) = 
     Locks $ foldl' (\m k -> case (Map.lookup k m1, Map.lookup k m2) of
       (Just (i1,c1,s1),Just (i2,c2,s2)) -> case compare i1 i2 of
-        EQ -> if c1 == c2
-                 then Map.insert k (i1, c1, s1 `Set.union` s2) m
-                 else Map.insert k (i1, c1 |&| c2, Set.empty) m
+        EQ | c1 == c2 -> Map.insert k (i1, c1, s1 `Set.union` s2) m
+           | c1 `impl` c2 -> Map.insert k (i1, c1, s1) m
+           | c2 `impl` c1 -> Map.insert k (i1, c2, s2) m
+           | otherwise -> Map.insert k (i1, c1 |&| c2, Set.empty) m
         LT -> Map.insert k (i2,c2,s2) m
         GT -> Map.insert k (i1,c1,s1) m
       (Just v1,Nothing) -> Map.insert k v1 m
@@ -62,7 +63,7 @@ instance (Ord i, CARD s) => Semigroup (Locks i s) where
 instance (Ord i, CARD s) => Monoid (Locks i s) where
   mempty = Locks (mempty)
 
-instance (Ord i, CARD s, Monad m) => CvRDT () (Locks i s) m where
+instance (Ord i, CARD s, Monad m) => CvRDT r (Locks i s) m where
   cvmerge _ s1 s2 = pure (s1 <> s2)
   cvempty _ = pure mempty
 

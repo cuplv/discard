@@ -1,24 +1,31 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE Rank2Types #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Data.CvRDT
   ( CvRDT (..)
-  -- * Core replica logic for hosting a CvRDT
+  -- * Core CvRDT replica logic
   , CvRepCmd
+  , CvReplica
   , runCvRep
+  , runCvRep'
   , check
   , incorp
   , emit
   , emitOn
   , bcast
   , checkMeta
+  , getResolver
+  -- * Lens interface
+  , store
+  , storeMeta
   , resolver
-  -- * Extra convenience commands
-  , emitFst
-  , emitSnd
-  , emitFstOn
-  , emitSndOn
+  , incorp'
+  , emit'
+  , emitOn'
   -- * CvRDT sub-classes
   , CvChain (..)
   , foldlC
@@ -27,24 +34,28 @@ module Data.CvRDT
 
 import Control.Monad.State
 import Data.Foldable (foldlM)
+import Control.Lens
 
 class (Ord s, Monad m) => CvRDT r s m where
   cvmerge :: r -> s -> s -> m s
   cvempty :: r -> m s
 
-instance (CvRDT r1 s1 m, CvRDT r2 s2 m) => CvRDT (r1,r2) (s1,s2) m where
-  cvmerge (r1,r2) (s1,s2) (s3,s4) = (,) <$> cvmerge r1 s1 s3 <*> cvmerge r2 s2 s4
-  cvempty (r1,r2) = (,) <$> cvempty r1 <*> cvempty r2
+instance (CvRDT r s1 m, CvRDT r s2 m) => CvRDT r (s1,s2) m where
+  cvmerge r (s1,s2) (s3,s4) = (,) <$> cvmerge r s1 s3 <*> cvmerge r s2 s4
+  cvempty r = (,) <$> cvempty r <*> cvempty r
 
 data CvReplica r s k m = CvReplica
-  { cvrState :: s
-  , cvrMetaState :: k
-  , cvrResolver :: r
-  , cvrOnUpdate :: s -> k -> m k
-  , cvrBroadcast :: s -> m () }
+  { _cvrState :: s
+  , _cvrMetaState :: k
+  , _cvrResolver :: r
+  , _cvrOnUpdate :: s -> k -> m k
+  , _cvrBroadcast :: s -> m () }
+
+makeLenses ''CvReplica
 
 type CvRepCmd r s k m = StateT (CvReplica r s k m) m
 
+-- | Run a replica managing a 'CvRDT' store over a series of commands.
 runCvRep :: (CvRDT r s m)
          => r -- ^ Resolver
          -> k -- ^ Initial meta-state
@@ -56,87 +67,90 @@ runCvRep r k bc ou cmd = do
   s0 <- cvempty r
   fst <$> runStateT cmd (CvReplica s0 k r ou bc)
 
+-- | Run a replica with no meta-state or update action
+runCvRep' :: (CvRDT r s m) => r -> (s -> m ()) -> CvRepCmd r s () m a -> m a
+runCvRep' r bc = runCvRep r () bc (\_ _ -> return ())
+
 -- | Broadcast the current state.
 bcast :: (CvRDT r s m) => CvRepCmd r s k m ()
-bcast = do s <- cvrState <$> get
-           bf <- cvrBroadcast <$> get
-           lift $ bf s
+bcast = lift =<< use cvrBroadcast <*> use store
 
 -- | Get the current state.
 check :: (Monad m) => CvRepCmd r s k m s
-check = cvrState <$> get
+check = use store
 
 -- | Get the state resolver.
-resolver :: (CvRDT r s m) => CvRepCmd r s k m r
-resolver = cvrResolver <$> get
+getResolver :: (CvRDT r s m) => CvRepCmd r s k m r
+getResolver = use cvrResolver
 
 -- | Get the current meta-state.
 checkMeta :: (CvRDT r s m) => CvRepCmd r s k m k
-checkMeta = cvrMetaState <$> get
+checkMeta = use cvrMetaState
 
--- | Rerun the meta update action on the current state.
+-- | Re-run the meta update action on the current state.
+--
+-- The meta update action is automatically run when the state is
+-- changed using any of the following actions ('incorp', 'emit',
+-- 'emitOn', etc.).
 updateMeta :: (CvRDT r s m) => CvRepCmd r s k m ()
-updateMeta = do 
-  rep <- get
-  k' <- lift$ (cvrOnUpdate rep) (cvrState rep) (cvrMetaState rep)
-  put $ rep { cvrMetaState = k' }
+updateMeta = cvrMetaState <~ 
+  (lift 
+   =<< use cvrOnUpdate 
+   <*> use store 
+   <*> use cvrMetaState)
 
 -- | Merge a state into the replica's current state.  The return value
 -- is the new combined state, or 'Nothing' if the merge made no
 -- change.
+--
+-- This action triggers the 'updateMeta' action when the state has
+-- changed.
 incorp :: (CvRDT r s m) => s -> CvRepCmd r s k m (Maybe s)
-incorp s2 = do 
-  rep <- get
-  s3 <- lift$ cvmerge (cvrResolver rep) (cvrState rep) s2
-  if s3 /= cvrState rep
-     then do put $ rep { cvrState = s3 }
+incorp = incorp' id
+
+-- | 'incorp' through a lens, merging the provided value into only the
+-- state component defined by the lens.
+incorp' :: (CvRDT r s m, CvRDT r t m) 
+        => Lens' s t
+        -> t
+        -> CvRepCmd r s k m (Maybe t)
+incorp' ls t2 = do
+  r <- use cvrResolver
+  t1 <- use $ store.ls
+  t3 <- lift $ cvmerge r t1 t2
+  if t1 == t3
+     then return Nothing
+     else do cvrState.ls .= t3
              updateMeta
-             return (Just s3)
-     else return Nothing
+             return (Just t3)
 
 -- | Merge a new state into the replica's current state and broadcast
 -- the new current state (only if it has changed).  The return value
 -- is the new current state.
 emit :: (CvRDT r s m) => s -> CvRepCmd r s k m s
-emit s = incorp s >>= \case
-  Just s' -> bcast >> return s'
-  Nothing -> check
+emit = emit' id
 
--- | 'emit' an update to only the first component of a pair-state.
-emitFst :: (CvRDT r1 s1 m, CvRDT r2 s2 m) 
-        => s1 
-        -> CvRepCmd (r1,r2) (s1,s2) k m s1
-emitFst s1 = do 
-  res <- snd . cvrResolver <$> get
-  s2 <- lift$ cvempty res
-  fst <$> emit (s1,s2)
-
--- | 'emit' an update to only the second component of a pair-state.
-emitSnd :: (CvRDT r1 s1 m, CvRDT r2 s2 m) 
-        => s2 
-        -> CvRepCmd (r1,r2) (s1,s2) k m s2
-emitSnd s2 = do 
-  res <- fst . cvrResolver <$> get
-  s1 <- lift$ cvempty res
-  snd <$> emit (s1,s2)
+-- | 'emit' through a lens.
+emit' :: (CvRDT r s m, CvRDT r t m) 
+      => Lens' s t
+      -> t
+      -> CvRepCmd r s k m t
+emit' ls s = incorp' ls s >>= \case
+  Just s' -> bcast >> return s
+  Nothing -> use (store.ls)
 
 -- | Run an action on the current state, incorporating and emitting
 -- its result as the new current state.  The return value is the new
 -- current state.
 emitOn :: (CvRDT r s m) => (s -> m s) -> CvRepCmd r s k m s
-emitOn f = emit =<< lift . f =<< check
+emitOn = emitOn' id
 
--- | 'emitOn' for only the first component of a pair-state.
-emitFstOn :: (CvRDT r1 s1 m, CvRDT r2 s2 m)
-          => (s1 -> m s1) 
-          -> CvRepCmd (r1,r2) (s1,s2) k m s1
-emitFstOn f = emitFst =<< lift . f =<< fst <$> check
-
--- | 'emitOn' for only the second component of a pair-state.
-emitSndOn :: (CvRDT r1 s1 m, CvRDT r2 s2 m)
-          => (s2 -> m s2) 
-          -> CvRepCmd (r1,r2) (s1,s2) k m s2
-emitSndOn f = emitSnd =<< lift . f =<< snd <$> check
+-- | 'emitOn' through a lens.
+emitOn' :: (CvRDT r s m, CvRDT r s1 m) 
+        => Lens' s s1
+        -> (s1 -> m s1)
+        -> CvRepCmd r s k m s1
+emitOn' ls f = emit' ls =<< lift . f =<< use (store.ls)
 
 -- | A "convergent sequence" in which merging preserves the relative
 -- order of all elements (and does not duplicate shared sub-chains).
@@ -178,3 +192,15 @@ foldlCM r f short a0 c0 =
           Nothing -> load c' (l:ls)
         Nothing -> foldlM f a0 ls
   in load c0 []
+
+-- | Current store value
+store :: Getter (CvReplica r s k m) s
+store = to $ view cvrState
+
+-- | Current store meta-state value
+storeMeta :: Getter (CvReplica r s k m) k
+storeMeta = to $ view cvrMetaState
+
+-- | Store resolver
+resolver :: Getter (CvReplica r s k m) r
+resolver = to $ view cvrResolver

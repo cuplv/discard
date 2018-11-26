@@ -32,6 +32,7 @@ import qualified Control.Concurrent.STM as STM
 import System.IO (hFlush,stdout)
 import Data.Time.Clock
 import Data.Foldable (fold)
+import Control.Lens
 
 import Data.CvRDT
 import Data.CARD.Store
@@ -124,7 +125,7 @@ data Manager c i s = Manager
   , batcheff :: [Effect s]
   , batchSize :: Int }
 
-type ManM r c i s k = StateT (Manager c i s) (CvRepCmd ((),r) (Store c i s) k IO)
+type ManM r c i s k = StateT (Manager c i s) (CvRepCmd r (Store c i s) k IO)
 
 class (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) => ManC r c i s k
 instance (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) => ManC r c i s k
@@ -180,10 +181,10 @@ initManager i os ds r s0 ts bsize = do
         0
         []
         bsize
-      onUp = upWithSumms latestState ((),r) s0
+      onUp = upWithSumms latestState r s0
   ti <- forkIO $ do
           runCvRep
-            ((),r) 
+            r 
             Map.empty 
             bc
             onUp 
@@ -248,10 +249,10 @@ getWaiting :: (ManC r c i s k) => ManM r c i s k (Maybe (Job s IO ()))
 getWaiting = do
   i <- manId <$> get
   others <- manOthers <$> get
-  locks <- fst <$> lift check
+  ls <- lift.use $ store.locks
   wr <- manWaitingRoom <$> get
   let findReady (c,fj) (Nothing,wr') = 
-        if (holding' i locks `impl` c) && confirmed i others locks
+        if (holding' i ls `impl` c) && confirmed i others ls
            then (Just fj,wr')
            else (Nothing, (c,fj):wr')
       findReady cfj (fj,wr') = (fj,cfj:wr')
@@ -274,20 +275,19 @@ manGetLatest = lstm . readTVar =<< manLatest <$> get
 putOnHold :: (ManC r c i s k) => Conref s -> (s -> IO (Job s IO ())) -> ManM r c i s k ()
 putOnHold c fj = do
   i <- manId <$> get
-  others <- manOthers <$> get
-  locks <- fst <$> lift check
-  if not $ requested i c locks
-     then lift (emitFstOn $ return . request i c) >> return ()
-     else return ()
+  lift (emitOn' locks $ return . request i c)
   modify (\m -> m { manWaitingRoom = (c,fj) : manWaitingRoom m })
+
+histAppend' :: (ManC r c i s k) => Effect s -> ManM r c i s k ()
+histAppend' e = do
+  i <- manId <$> get
+  lift $ histAppend i e
 
 sendBatch :: (ManC r c i s k) => ManM r c i s k ()
 sendBatch = do
-  i <- manId <$> get
-  r2 <- snd <$> lift resolver
   beff <- batcheff <$> get
   if length beff > 0
-     then do lift (emitSndOn (append r2 (i,fold beff)))
+     then do histAppend' (fold beff)
              modify $ \m -> m { batcheff = [] }
      else return ()
 
@@ -306,18 +306,18 @@ workOnJob = manCurrentJob <$> get >>= \case
   Working j0 j -> do
     i <- manId <$> get
     others <- manOthers <$> get
-    locks <- fst <$> lift check
+    ls <- lift.use $ store.locks
     case j of -- do work!
       Request c f -> do
         liftIO $ putStrLn "Handling nested request..."
-        if not $ requested i c locks
-           then lift (emitFstOn $ return . request i c) >> return ()
-           else if confirmed i others locks
+        if not $ requested i c ls
+           then lift (emitOn' locks $ return . request i c) >> return ()
+           else if confirmed i others ls
                    then do advJob . f =<< lstm . readTVar =<< manLatest <$> get
                            workOnJob
                    else return ()
       Emit e m -> do
-        case permitted' i e locks of
+        case permitted' i e ls of
           Right () -> do enbatch e
                          onRCI $ reportSuccess e
                          -- liftIO $ putStrLn "Emit!"
@@ -337,16 +337,16 @@ workOnJob = manCurrentJob <$> get >>= \case
 
   Idle -> do -- No current job, try to pop from queue
     i <- manId <$> get
-    locks <- fst <$> lift check
+    ls <- lift.use $ store.locks
     let releaseAll = 
-          if holding i locks
+          if holding i ls
              then do liftIO (putStrLn "Releasing locks...")
                      mx <- grantMultiplex <$> get 
                      if mx > 1
                         then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
                         else return ()
                      modify (\m -> m { grantMultiplex = 0 })
-                     lift (emitFstOn $ return . release i) >> return ()
+                     lift (emitOn' locks $ return . release i) >> return ()
              else return ()
     -- Try waiting room first
     getWaiting >>= \case
@@ -373,8 +373,8 @@ handleLockReqs :: (ManC r c i s k) => ManM r c i s k ()
 handleLockReqs = do
   i <- manId <$> get
   rci <- manRCIndex <$> get
-  locks <- fst <$> lift check
-  rci' <- liftIO $ foldM (flip enqueGrant) rci (ungranted i locks)
+  ls <- lift.use $ store.locks
+  rci' <- liftIO $ foldM (flip enqueGrant) rci (ungranted i ls)
   
   modify (\m -> m { manRCIndex = rci' })
 
@@ -385,7 +385,7 @@ grantLockReqs = do
     Just ((i2,c),rci') -> do 
       sendBatch
       modify $ \m -> m { manRCIndex = rci' }
-      lift . emitFstOn $ \ls -> return (grant (manId man) i2 ls)
+      lift . emitOn' locks $ \ls -> return (grant (manId man) i2 ls)
       liftIO $ putStrLn "Granted lock."
       return ()
     Nothing -> return ()
@@ -407,12 +407,12 @@ lstm = liftIO . atomically
 
 upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
             => TVar s -- ^ Location to post result
-            -> (r1,r) -- ^ Resolver
+            -> r -- ^ Resolver
             -> s -- ^ Initial value
             -> (s1, Hist c i s) -- ^ History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post (_,r) s0 (_,hist) summs = do
+upWithSumms post r s0 (_,hist) summs = do
   s <- evalHist r s0 hist summs
   lstm $ swapTVar post s
   return (Map.insert hist s summs)
