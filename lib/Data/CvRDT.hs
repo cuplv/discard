@@ -22,6 +22,7 @@ module Data.CvRDT
   -- * CvRDT sub-classes
   , CvChain (..)
   , foldlC
+  , foldlCM
   ) where
 
 import Control.Monad.State
@@ -146,20 +147,31 @@ class (CvRDT r (c l) m) => CvChain r c l m where
   append :: r -> l -> c l -> m (c l)
 
 -- | Perform a left-fold over a 'CvChain', using the provided
--- "shortcut action" to avoid loading the entire chain if possible.
+-- "shortcut function" to avoid loading the entire chain if possible.
 -- 
--- The shortcut action is applied to each chain prefix as links are
--- popped off the end; if the action ever produces a 'Just' value,
+-- The shortcut function is applied to each chain prefix as links are
+-- popped off the end; if the function ever produces a 'Just' value,
 -- that value will be used in place of the provided initial 'a' value,
 -- and the fold will skip the links remaining in matched prefix.
 foldlC :: (CvChain r c l m) 
        => r -- ^ Resolver
-       -> (a -> l -> m a) -- ^ Left-fold update action
-       -> (c l -> m (Maybe a)) -- ^ Shortcut action
+       -> (a -> l -> a) -- ^ Left-fold update function
+       -> (c l -> Maybe a) -- ^ Shortcut function
        -> a -- ^ Initial value
        -> c l -- ^ Chain to fold over
        -> m a
-foldlC r f short a0 c0 = 
+foldlC r f short = foldlCM r (\a b -> return $ f a b) (return . short)
+
+-- | Just like 'foldlC', except that the update and shortcut functions
+-- can be monadic actions.
+foldlCM :: (CvChain r c l m) 
+        => r -- ^ Resolver
+        -> (a -> l -> m a) -- ^ Left-fold update action
+        -> (c l -> m (Maybe a)) -- ^ Shortcut action
+        -> a -- ^ Initial value
+        -> c l -- ^ Chain to fold over
+        -> m a
+foldlCM r f short a0 c0 = 
   let load c ls = pop r c >>= \case
         Just (l,c') -> short c' >>= \case
           Just a -> foldlM f a (l:ls)

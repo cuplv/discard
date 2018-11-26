@@ -33,8 +33,8 @@ evalHist :: (CARD s, CvChain r c (i, Effect s) m)
 evalHist r s0 c0 summs = 
   foldlC 
     r 
-    (\s (_,e) -> return $ runEffect s e)
-    (\c -> return $ Data.Map.lookup c summs)
+    (\s -> runEffect s . snd)
+    (flip Data.Map.lookup summs)
     s0
     c0
 
