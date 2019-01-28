@@ -188,7 +188,7 @@ initManager i os ds r s0 ts bsize = do
             Map.empty 
             bc
             onUp 
-            (runStateT managerLoop manager)
+            (runStateT ((lift . lift $ helloAll ds) >> managerLoop) manager)
           return ()
   return $ ManagerConn eventQueue latestState ti
 
@@ -240,6 +240,10 @@ handleLatest = do
       _ -> lstm $ writeTQueue (manJobQueue man) j
     ManNew (Left (BCast s)) -> 
       lift (incorp s) >> return ()
+    ManNew (Left Hello) ->
+      -- Respond to a 'Hello' by broadcasting the current state,
+      -- bringing the new node up to date.
+      lift bcast >> return ()
     ManRate rci' -> do
       -- liftIO $ putStrLn "RateControl event."
       modify (\m -> m { manRCIndex = rci' })
