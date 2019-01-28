@@ -5,8 +5,8 @@
 
 module Network.Discard.Node
   ( Script
-  , runLQR
-  , runLQM
+  , runCarolR
+  , runCarolM
   , ManagerConn
   , runNode
   ) where

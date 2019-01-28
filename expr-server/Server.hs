@@ -129,8 +129,8 @@ expScript econf i man = do
   reqs <- zip [0..]
           . map (chooseOp bankProfile (expMix econf))
           . randomRs (1,100) 
-          <$> getStdGen :: IO [(Int,(String,LQ Counter ()))]
-  let mkRequest (n,(s,t)) = stamp (n,s) startQ >> runLQM man (const $ stamp n endQ) t
+          <$> getStdGen :: IO [(Int,(String,Carol Counter ()))]
+  let mkRequest (n,(s,t)) = stamp (n,s) startQ >> runCarolM man (const $ stamp n endQ) t
       rc startTime (r:rs) = do 
         mkRequest r
         threadDelay (oneSec `div` expRate econf)

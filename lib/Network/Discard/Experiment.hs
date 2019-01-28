@@ -56,9 +56,9 @@ instance ToJSON Mix where
   toEncoding = genericToEncoding defaultOptions
 instance FromJSON Mix
 
-type Profile s = String -> LQ s ()
+type Profile s = String -> Carol s ()
 
-chooseOp :: Profile s -> Mix -> Int -> (String, LQ s ())
+chooseOp :: Profile s -> Mix -> Int -> (String, Carol s ())
 chooseOp prf (Mix ns df) n = 
   let opStr = foldr (\(n',s') s -> if n <= n'
                                       then s'

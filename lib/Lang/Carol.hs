@@ -1,9 +1,9 @@
 module Lang.Carol 
-  ( LQ
+  ( Carol
   , HelpMe (..)
   , helpMe
-  , runLQ
-  , runLQ'
+  , runCarol
+  , runCarol'
   , issue
   , query
   , assert
@@ -16,8 +16,8 @@ import Data.CARD
 
 assert :: Bool -- ^ Assert condition
        -> String -- ^ Failure message
-       -> LQ s (Either String a) -- ^ Remaining term
-       -> LQ s (Either String a)
+       -> Carol s (Either String a) -- ^ Remaining term
+       -> Carol s (Either String a)
 assert b s op = if b
                    then op
                    else return (Left s)

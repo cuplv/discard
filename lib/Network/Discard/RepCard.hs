@@ -8,8 +8,8 @@
 
 module Network.Discard.RepCard 
   ( Job (..)
-  , runLQM
-  , runLQR
+  , runCarolM
+  , runCarolR
   , ManC
   , ManagerConn
   , initManager
@@ -82,20 +82,20 @@ handleQR man h = do
 -- trivial, and perform some final action when it is complete.  This
 -- action may be performed on either the calling thread or the manager
 -- thread.
-runLQM :: (CARD s) 
+runCarolM :: (CARD s) 
        => ManagerConn i r s 
        -> (a -> IO ()) -- ^ Final action to execute on completion
-       -> LQ s a -- ^ Operation to run, feeding the final action
+       -> Carol s a -- ^ Operation to run, feeding the final action
        -> IO ()
-runLQM man fin t = handleQM fin man (runLQ' t)
+runCarolM man fin t = handleQM fin man (runCarol' t)
 
 -- | Run an operation, handing it off the store manager if it is not
 -- trivial, and return the result to the original caller
-runLQR :: (CARD s)
+runCarolR :: (CARD s)
        => ManagerConn i r s
-       -> LQ s a
+       -> Carol s a
        -> IO a
-runLQR man t = handleQR man (runLQ' t)
+runCarolR man t = handleQR man (runCarol' t)
 
 data Work j = Work j j
 

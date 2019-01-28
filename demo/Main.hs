@@ -57,12 +57,12 @@ node = do
   let script i man = do
         liftIO $ putStr (i ++ " $ ") >> hFlush stdout
         words <$> getLine >>= \case
-          ["dp",a] -> runLQM man (const $ return ()) (deposit (read a))
-          ["wd",a] -> runLQR man  (withdraw (read a)) >>= \case
+          ["dp",a] -> runCarolM man (const $ return ()) (deposit (read a))
+          ["wd",a] -> runCarolR man  (withdraw (read a)) >>= \case
                         Left e -> putStrLn e
                         _ -> return ()
-          ["check"] -> print =<< runLQR man (current)
-          ["check","exact"] -> print =<< runLQR man (currentS)
+          ["check"] -> print =<< runCarolR man (current)
+          ["check","exact"] -> print =<< runCarolR man (currentS)
           _ -> putStrLn "Try again."
         script i man
   runNode (nodeName conf) (ipfsPort conf) net (Counter 0) 100000 1 script
