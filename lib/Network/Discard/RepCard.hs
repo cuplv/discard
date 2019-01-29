@@ -160,10 +160,11 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> [Dest t] -- ^ Broadcast targets
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
+            -> Hist c i s -- ^ Initial history
             -> Int -- ^ Timeout unit size (microseconds)
             -> Int -- ^ Batch size
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 ts bsize = do
+initManager i os ds r s0 hist0 ts bsize = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -184,8 +185,9 @@ initManager i os ds r s0 ts bsize = do
       onUp = upWithSumms latestState r s0
   ti <- forkIO $ do
           runCvRep
-            r 
-            Map.empty 
+            r
+            (mempty,hist0)
+            (Map.fromList [(hist0,s0)])
             bc
             onUp 
             (runStateT ((lift . lift $ helloAll ds) >> managerLoop) manager)

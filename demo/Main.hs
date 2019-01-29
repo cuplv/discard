@@ -23,6 +23,7 @@ import Data.Time.Clock
 import Lang.Carol
 import Lang.Carol.Bank
 import Network.Discard
+import Data.EventGraph
 
 main :: IO ()
 main = node
@@ -65,5 +66,5 @@ node = do
           ["check","exact"] -> print =<< runCarolR man (currentS)
           _ -> putStrLn "Try again."
         script i man
-  runNode (nodeName conf) (ipfsPort conf) net (Counter 0) 100000 1 script
+  runNode (nodeName conf) (ipfsPort conf) net (Counter 0) Data.EventGraph.empty 100000 1 script
   return ()

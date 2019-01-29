@@ -58,18 +58,24 @@ type CvRepCmd r s k m = StateT (CvReplica r s k m) m
 -- | Run a replica managing a 'CvRDT' store over a series of commands.
 runCvRep :: (CvRDT r s m)
          => r -- ^ Resolver
+         -> s -- ^ Initial state
          -> k -- ^ Initial meta-state
          -> (s -> m ()) -- ^ Broadcast action
          -> (s -> k -> m k) -- ^ On-update action
          -> CvRepCmd r s k m a -- ^ Command script
          -> m a
-runCvRep r k bc ou cmd = do 
-  s0 <- cvempty r
-  fst <$> runStateT cmd (CvReplica s0 k r ou bc)
+runCvRep r s0 k0 bc ou cmd = 
+  fst <$> runStateT cmd (CvReplica s0 k0 r ou bc)
 
--- | Run a replica with no meta-state or update action
-runCvRep' :: (CvRDT r s m) => r -> (s -> m ()) -> CvRepCmd r s () m a -> m a
-runCvRep' r bc = runCvRep r () bc (\_ _ -> return ())
+-- | Run a replica with an empty initial state and no meta-state or
+-- update action
+runCvRep' :: (CvRDT r s m) 
+          => r -- ^ Resolver
+          -> (s -> m ())  -- ^ Broadcast action
+          -> CvRepCmd r s () m a -- ^ Command script
+          -> m a
+runCvRep' r bc sc = do s0 <- cvempty r
+                       runCvRep r s0 () bc (\_ _ -> return ()) sc
 
 -- | Broadcast the current state.
 bcast :: (CvRDT r s m) => CvRepCmd r s k m ()
