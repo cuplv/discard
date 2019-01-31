@@ -6,6 +6,7 @@
 module Main where
 
 import System.IO
+import System.Directory
 import System.Exit
 import Data.List (genericLength)
 import Control.Monad
@@ -24,6 +25,8 @@ import Lang.Carol
 import Lang.Carol.Bank
 import Network.Discard
 import Data.EventGraph
+import Data.CARD.Store
+import Data.EventGraph.Ipfs (IpfsEG)
 
 main :: IO ()
 main = node
@@ -32,7 +35,10 @@ main = node
 data ConfCLI = ConfCLI
   { confFile :: FilePath
   , nodeName :: String
-  , ipfsPort :: Int}
+  , ipfsPort :: Int
+  , pFile :: Maybe FilePath }
+
+optionm p os = (Just <$> option p os) <|> pure Nothing
 
 confCLI :: IO ConfCLI
 confCLI = execParser $ 
@@ -44,10 +50,21 @@ confCLI = execParser $
                        <> metavar "NAME" 
                        <> help "Node name")
         <*> option auto (long "ipfs-port" <> value 5001)
+        <*> optionm str (short 'f' <> metavar "FILE" <> help "Persistent storage file")
       misc = (fullDesc
               <> progDesc "Run a bank account CARD node"
               <> header "discard-demo - a demo application for the Carol language")
   in info (parser <**> helper) misc
+
+tryPFile :: FilePath -> IO (Maybe (Counter, Hist (Edge (IpfsEG String)) String Counter))
+tryPFile fp = doesFileExist fp >>= \case
+  True -> decodeFileEither fp >>= \case
+    Right state -> return (Just state)
+    Left e -> do print e
+                 die $ "Save file \"" <> fp <> "\" exists but is unreadable."
+  False -> return Nothing
+
+emptyInit = (Counter 0, Data.EventGraph.empty)
 
 node :: IO ()
 node = do
@@ -55,16 +72,27 @@ node = do
   net <- decodeFileEither (confFile conf) >>= \case
     Right net -> return net
     Left exc -> print exc >> die "Could not read network configuration file"
+  (initStore,initHist) <- case pFile conf of
+                            Just fp -> tryPFile fp >>= \case
+                                         Just r -> return r
+                                         _ -> return emptyInit
+                            _ -> return emptyInit
   let script i man = do
         liftIO $ putStr (i ++ " $ ") >> hFlush stdout
         words <$> getLine >>= \case
-          ["dp",a] -> runCarolM man (const $ return ()) (deposit (read a))
-          ["wd",a] -> runCarolR man  (withdraw (read a)) >>= \case
-                        Left e -> putStrLn e
-                        _ -> return ()
-          ["check"] -> print =<< runCarolR man (current)
-          ["check","exact"] -> print =<< runCarolR man (currentS)
-          _ -> putStrLn "Try again."
-        script i man
-  runNode (nodeName conf) (ipfsPort conf) net (Counter 0) Data.EventGraph.empty 100000 1 script
-  return ()
+          ["dp",a] -> do runCarolM man (const $ return ()) (deposit (read a))
+                         script i man
+          ["wd",a] -> do runCarolR man  (withdraw (read a)) >>= \case
+                           Left e -> putStrLn e
+                           _ -> return ()
+                         script i man
+          ["check"] -> do print =<< runCarolR man (current)
+                          script i man
+          ["check","exact"] -> do print =<< runCarolR man (currentS)
+                                  script i man
+          ["exit"] -> return ()
+          _ -> putStrLn "Try again." >> script i man
+  (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist (Counter 0) 100000 1 script
+  case pFile conf of
+    Just fp -> encodeFile fp (sf,hf)
+    _ -> return ()

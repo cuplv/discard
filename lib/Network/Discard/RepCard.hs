@@ -120,6 +120,7 @@ data Manager c i s = Manager
   , manWaitingRoom :: [(Conref s, s -> IO (Job s IO ()))]
   , manCurrentJob :: Workspace (Job s IO ())
   , manLatest :: TVar s
+  , manLatestHist :: TVar (Hist c i s)
   , manRCIndex :: RCIndex i s (Job s IO ())
   , grantMultiplex :: Int
   , batcheff :: [Effect s]
@@ -133,19 +134,27 @@ instance (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) 
 data ManagerConn c i s = ManagerConn 
   { eventQueue :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
   , latestStoreVal :: TVar s
+  , latestHistVal :: TVar (Hist c i s)
   , manLoopThreadId :: ThreadId }
 
 giveUpdate :: BMsg (Store c i s) -> ManagerConn c i s -> IO ()
-giveUpdate m (ManagerConn q _ _) = lstm $ writeTQueue q (Left m)
+giveUpdate m (ManagerConn q _ _ _) = lstm $ writeTQueue q (Left m)
 
 giveJob :: Job s IO () -> ManagerConn c i s -> IO ()
-giveJob j (ManagerConn q _ _) = lstm $ writeTQueue q (Right j)
+giveJob j (ManagerConn q _ _ _) = lstm $ writeTQueue q (Right j)
 
 getLatest :: ManagerConn c i s -> IO s
-getLatest (ManagerConn _ v _) = readTVarIO v
+getLatest (ManagerConn _ v _ _) = readTVarIO v
 
-killManager :: ManagerConn c i s -> IO ()
-killManager (ManagerConn _ _ i) = killThread i
+getLatestHist :: ManagerConn c i s -> IO (Hist c i s)
+getLatestHist (ManagerConn _ _ h _) = readTVarIO h
+
+killManager :: ManagerConn c i s -> IO (s, Hist c i s)
+killManager conn@(ManagerConn _ _ _ i) = do 
+  sFinal <- getLatest conn
+  hFinal <- getLatestHist conn
+  killThread i
+  return (sFinal, hFinal)
 
 -- | Microseconds to seconds
 ms2s :: (Fractional a) => Int -> a
@@ -161,13 +170,15 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
             -> Hist c i s -- ^ Initial history
+            -> s -- ^ Base store value
             -> Int -- ^ Timeout unit size (microseconds)
             -> Int -- ^ Batch size
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 hist0 ts bsize = do
+initManager i os ds r s0 hist0 s00 ts bsize = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
+  latestHist <- newTVarIO hist0
   rci <- newRCIndex (ms2s ts)
   let bc = broadcast ds
       manager = Manager
@@ -178,11 +189,12 @@ initManager i os ds r s0 hist0 ts bsize = do
         []
         Idle
         latestState
+        latestHist
         rci
         0
         []
         bsize
-      onUp = upWithSumms latestState r s0
+      onUp = upWithSumms latestState latestHist r s00
   ti <- forkIO $ do
           runCvRep
             r
@@ -192,7 +204,7 @@ initManager i os ds r s0 hist0 ts bsize = do
             onUp 
             (runStateT ((lift . lift $ helloAll ds) >> managerLoop) manager)
           return ()
-  return $ ManagerConn eventQueue latestState ti
+  return $ ManagerConn eventQueue latestState latestHist ti
 
 managerLoop :: (ManC r c i s k) => ManM r c i s k ()
 managerLoop = do
@@ -413,12 +425,14 @@ lstm = liftIO . atomically
 
 upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
             => TVar s -- ^ Location to post result
+            -> TVar (Hist c i s) -- ^ Location to post history
             -> r -- ^ Resolver
             -> s -- ^ Initial value
             -> (s1, Hist c i s) -- ^ History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post r s0 (_,hist) summs = do
+upWithSumms post postHist r s0 (_,hist) summs = do
   s <- evalHist r s0 hist summs
   lstm $ swapTVar post s
+  lstm $ swapTVar postHist hist
   return (Map.insert hist s summs)

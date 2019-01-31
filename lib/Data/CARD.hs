@@ -162,6 +162,9 @@ instance CARD Counter where
     (_,SetTo _) -> True
     _ -> False
 
+instance ToJSON Counter where
+  toEncoding = genericToEncoding defaultOptions
+instance FromJSON Counter where
 instance ToJSON (Ef Counter) where
   toEncoding = genericToEncoding defaultOptions
 instance FromJSON (Ef Counter)
