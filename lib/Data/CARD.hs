@@ -5,6 +5,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE EmptyDataDeriving #-}
 
 module Data.CARD
   ( CARD (..)
@@ -28,6 +29,7 @@ module Data.CARD
   , checkBlock'
   -- * Common instances
   , Counter (..)
+  , RGArray (..)
   ) where
 
 import Data.Foldable (foldl')
@@ -171,3 +173,12 @@ instance FromJSON (Ef Counter)
 instance ToJSON (Cr Counter) where
   toEncoding = genericToEncoding defaultOptions
 instance FromJSON (Cr Counter)
+
+newtype RGArray a = RGArray [a] deriving (Show,Read,Eq,Ord,Generic)
+
+instance (Eq a, Ord a) => CARD (RGArray a) where
+  data Ef (RGArray a) = RGAppend a deriving (Show,Read,Eq,Ord,Generic)
+  defineEffect (RGArray as) (RGAppend a) = RGArray (a:as)
+  
+  data Cr (RGArray a) deriving (Show,Read,Eq,Ord,Generic)
+  defineConflict _ _ = False
