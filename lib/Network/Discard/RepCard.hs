@@ -173,8 +173,9 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> s -- ^ Base store value
             -> Int -- ^ Timeout unit size (microseconds)
             -> Int -- ^ Batch size
+            -> (s -> IO ()) -- ^ Callback to register on state changes
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 hist0 s00 ts bsize = do
+initManager i os ds r s0 hist0 s00 ts bsize cb = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -194,7 +195,7 @@ initManager i os ds r s0 hist0 s00 ts bsize = do
         0
         []
         bsize
-      onUp = upWithSumms latestState latestHist r s00
+      onUp = upWithSumms latestState latestHist cb r s00
   ti <- forkIO $ do
           runCvRep
             r
@@ -426,13 +427,15 @@ lstm = liftIO . atomically
 upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
             => TVar s -- ^ Location to post result
             -> TVar (Hist c i s) -- ^ Location to post history
+            -> (s -> m ()) -- ^ Other callback things to do
             -> r -- ^ Resolver
             -> s -- ^ Initial value
             -> (s1, Hist c i s) -- ^ History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post postHist r s0 (_,hist) summs = do
+upWithSumms post postHist cb r s0 (_,hist) summs = do
   s <- evalHist r s0 hist summs
   lstm $ swapTVar post s
   lstm $ swapTVar postHist hist
+  cb s
   return (Map.insert hist s summs)

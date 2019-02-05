@@ -28,9 +28,11 @@ import Data.EventGraph
 import Data.CARD.Store
 import Data.EventGraph.Ipfs (IpfsEG)
 
+import Interface
+
 main :: IO ()
 main = node
-
+-- main = runUi
 
 data ConfCLI = ConfCLI
   { confFile :: FilePath
@@ -66,6 +68,7 @@ tryPFile fp = doesFileExist fp >>= \case
 
 emptyInit = (Counter 0, Data.EventGraph.empty)
 
+
 node :: IO ()
 node = do
   conf <- confCLI
@@ -77,22 +80,12 @@ node = do
                                          Just r -> return r
                                          _ -> return emptyInit
                             _ -> return emptyInit
-  let script i man = do
-        liftIO $ putStr (i ++ " $ ") >> hFlush stdout
-        words <$> getLine >>= \case
-          ["dp",a] -> do runCarolM man (const $ return ()) (deposit (read a))
-                         script i man
-          ["wd",a] -> do runCarolR man  (withdraw (read a)) >>= \case
-                           Left e -> putStrLn e
-                           _ -> return ()
-                         script i man
-          ["check"] -> do print =<< runCarolR man (current)
-                          script i man
-          ["check","exact"] -> do print =<< runCarolR man (currentS)
-                                  script i man
-          ["exit"] -> return ()
-          _ -> putStrLn "Try again." >> script i man
-  (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist (Counter 0) 100000 1 script
+  
+  (eventChan, onUpdate) <- mkUpdateChan
+
+  let script2 i man = runUi initStore man eventChan
+
+  (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist (Counter 0) 100000 1 onUpdate script2
   case pFile conf of
     Just fp -> encodeFile fp (sf,hf)
     _ -> return ()

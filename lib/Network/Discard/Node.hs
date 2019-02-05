@@ -55,9 +55,10 @@ runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i,
         -> s -- ^ Base store value
         -> Int -- ^ Timeout unit size (microseconds)
         -> Int -- ^ Batch size
+        -> (s -> IO ()) -- ^ Callback for store updates
         -> Script (IpfsEG i) c i s a -- ^ Actions to perform
         -> IO (a, s, Hist c i s)
-runNode i ipfsPort net s0 hist0 s00 n batchSize script = do
+runNode i ipfsPort net s0 hist0 s00 n batchSize cb script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
@@ -65,7 +66,7 @@ runNode i ipfsPort net s0 hist0 s00 n batchSize script = do
   ipfsr <- mkIpfsEG "localhost" ipfsPort i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
-  man <- initManager i otherIds otherDests ipfsr s0 hist0 s00 n batchSize
+  man <- initManager i otherIds otherDests ipfsr s0 hist0 s00 n batchSize cb
   lt <- mkListener (mkSrc port) man
   res <- script i man
   killThread lt
