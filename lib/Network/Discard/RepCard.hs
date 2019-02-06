@@ -12,7 +12,10 @@ module Network.Discard.RepCard
   , runCarolR
   , ManC
   , ManagerConn
+  , DManagerSettings (..)
   , initManager
+  , defaultDManagerSettings
+  , defaultDManagerSettings'
   , giveUpdate
   , giveJob
   , getLatest
@@ -160,6 +163,24 @@ killManager conn@(ManagerConn _ _ _ i) = do
 ms2s :: (Fractional a) => Int -> a
 ms2s ms = fromIntegral ms / 1000000
 
+data DManagerSettings c i s = DManagerSettings
+  { timeoutUnitSize :: Int
+  , setBatchSize :: Int
+  , onStoreUpdate :: s -> IO ()
+  , onHistUpdate :: Hist c i s -> IO ()
+  , baseStoreValue :: s }
+
+defaultDManagerSettings :: (Monoid s) => DManagerSettings c i s
+defaultDManagerSettings = defaultDManagerSettings' mempty
+
+defaultDManagerSettings' :: s -> DManagerSettings c i s
+defaultDManagerSettings' s = DManagerSettings
+  { timeoutUnitSize = 100000
+  , setBatchSize = 1
+  , onStoreUpdate = const (return ())
+  , onHistUpdate = const (return ())
+  , baseStoreValue = s }
+
 -- | Initialize a replica manager.  This returns a 'TQueue' for
 -- updates from other replicas and jobs from other threads, and a
 -- 'TVar' which can be read to get the latest calculated store value.
@@ -170,12 +191,9 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
             -> Hist c i s -- ^ Initial history
-            -> s -- ^ Base store value
-            -> Int -- ^ Timeout unit size (microseconds)
-            -> Int -- ^ Batch size
-            -> (s -> IO ()) -- ^ Callback to register on state changes
+            -> DManagerSettings c i s
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 hist0 s00 ts bsize cb = do
+initManager i os ds r s0 hist0 (DManagerSettings ts bsize cbS cbH s00) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -195,7 +213,7 @@ initManager i os ds r s0 hist0 s00 ts bsize cb = do
         0
         []
         bsize
-      onUp = upWithSumms latestState latestHist cb r s00
+      onUp = upWithSumms latestState latestHist cbS cbH r s00
   ti <- forkIO $ do
           runCvRep
             r
@@ -427,15 +445,17 @@ lstm = liftIO . atomically
 upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
             => TVar s -- ^ Location to post result
             -> TVar (Hist c i s) -- ^ Location to post history
-            -> (s -> m ()) -- ^ Other callback things to do
+            -> (s          -> m ()) -- ^ State update callback
+            -> (Hist c i s -> m ()) -- ^ Hist update callback
             -> r -- ^ Resolver
             -> s -- ^ Initial value
             -> (s1, Hist c i s) -- ^ History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post postHist cb r s0 (_,hist) summs = do
+upWithSumms post postHist cbS cbH r s0 (_,hist) summs = do
   s <- evalHist r s0 hist summs
   lstm $ swapTVar post s
   lstm $ swapTVar postHist hist
-  cb s
+  cbS s
+  cbH hist
   return (Map.insert hist s summs)

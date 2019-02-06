@@ -150,6 +150,11 @@ checkBlock' EQV (Effect es) = case es of
 
 newtype Counter = Counter Int deriving (Show,Read,Eq,Ord,Generic)
 
+instance Semigroup Counter where
+  (<>) (Counter a) (Counter b) = Counter (a + b)
+instance Monoid Counter where
+  mempty = Counter 0
+
 instance CARD Counter where
   data Ef Counter = Add Int | Sub Int | SetTo Int deriving (Show,Read,Eq,Ord,Generic)
   defineEffect (Counter s) e = case e of
@@ -175,6 +180,11 @@ instance ToJSON (Cr Counter) where
 instance FromJSON (Cr Counter)
 
 newtype RGArray a = RGArray [a] deriving (Show,Read,Eq,Ord,Generic)
+
+instance Semigroup (RGArray a) where
+  (<>) (RGArray a) (RGArray b) = RGArray (a <> b)
+instance Monoid (RGArray a) where
+  mempty = RGArray mempty
 
 instance (Eq a, Ord a) => CARD (RGArray a) where
   data Ef (RGArray a) = RGAppend a deriving (Show,Read,Eq,Ord,Generic)

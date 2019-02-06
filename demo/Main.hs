@@ -84,8 +84,9 @@ node = do
   (eventChan, onUpdate) <- mkUpdateChan
 
   let script2 i man = runUi initStore man eventChan
+      settings = defaultDManagerSettings { onStoreUpdate = onUpdate }
 
-  (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist (Counter 0) 100000 1 onUpdate script2
+  (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script2
   case pFile conf of
     Just fp -> encodeFile fp (sf,hf)
     _ -> return ()

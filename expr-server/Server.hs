@@ -86,12 +86,15 @@ startExp i ipfsPort tsize lastv resultsv (ec,nc) = do
       Nothing -> return Nothing
       Just _ -> return (Just (last + 1))
   let s0 = Counter 100000
+      settings = defaultDManagerSettings { timeoutUnitSize = tsize
+                                         , setBatchSize = batchSize
+                                         , baseStoreValue = s0 }
   case mcurrent of
     Just current -> do
       atomically $ swapTVar lastv (Just current)
       -- Start the experiment
       forkIO $ do 
-        (results,_,_) <- runNode i (ipfsPort) nc s0 Data.EventGraph.empty s0 tsize batchSize (const $ return ()) (expScript ec)
+        (results,_,_) <- runNode i (ipfsPort) nc s0 Data.EventGraph.empty settings (expScript ec)
         atomically $ modifyTVar resultsv (Map.insert current results)
         putStrLn $ "Finished experiment " ++ show current
       putStrLn $ "Started experiment " ++ show current
