@@ -328,7 +328,7 @@ workOnJob = manCurrentJob <$> get >>= \case
     ls <- lift.use $ store.locks
     case j of -- do work!
       Request c f -> do
-        liftIO $ putStrLn "Handling nested request..."
+        -- liftIO $ putStrLn "Handling nested request..."
         if not $ requested i c ls
            then lift (emitOn' locks $ return . request i c) >> return ()
            else if confirmed i others ls
@@ -359,11 +359,11 @@ workOnJob = manCurrentJob <$> get >>= \case
     ls <- lift.use $ store.locks
     let releaseAll = 
           if holding i ls
-             then do liftIO (putStrLn "Releasing locks...")
+             then do -- liftIO (putStrLn "Releasing locks...")
                      mx <- grantMultiplex <$> get 
-                     if mx > 1
-                        then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
-                        else return ()
+                     -- if mx > 1
+                     --    then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
+                     --    else return ()
                      modify (\m -> m { grantMultiplex = 0 })
                      lift (emitOn' locks $ return . release i) >> return ()
              else return ()
@@ -405,7 +405,7 @@ grantLockReqs = do
       sendBatch
       modify $ \m -> m { manRCIndex = rci' }
       lift . emitOn' locks $ \ls -> return (grant (manId man) i2 ls)
-      liftIO $ putStrLn "Granted lock."
+      -- liftIO $ putStrLn "Granted lock."
       return ()
     Nothing -> return ()
 
