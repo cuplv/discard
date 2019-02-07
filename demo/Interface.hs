@@ -23,9 +23,11 @@ import Data.CARD
 import Network.Discard
 import Lang.Carol.Bank
 
-data CustomEvent = StoreUpdate Counter deriving Show
+data CustomEvent = StoreUpdate Counter | GotMessage deriving Show
 
 data CommandForm = CommandForm { _cfCommand :: Text.Text } deriving Show
+
+data NetStat = Online | Offline deriving (Show,Read,Eq,Ord)
 
 makeLenses ''CommandForm
 
@@ -34,34 +36,41 @@ data Name = CommandField deriving (Show,Read,Eq,Ord)
 mkForm :: CommandForm -> Form CommandForm e Name
 mkForm = newForm [ editTextField cfCommand CommandField (Just 1) ]
 
-draw :: (Counter, Form CommandForm e Name) -> [Widget Name]
-draw ((Counter b),f) = [C.vCenter $ C.hCenter form <=> C.hCenter store]
+type St e = (NetStat, Counter, Form CommandForm e Name)
+
+draw :: St e -> [Widget Name]
+draw (ns,(Counter b),f) = 
+  [C.vCenter $ C.hCenter form <=> C.hCenter store <=> C.hCenter status]
   where form = renderForm f
         store = Brick.str $ "Balance: $" <> (show b)
+        status = Brick.str $ "Network status: " <> (show ns)
+
+thd (_,_,a) = a
 
 app :: ManagerConn c i Counter
-    -> App (Counter, Form CommandForm CustomEvent Name) CustomEvent Name
+    -> App (St CustomEvent) CustomEvent Name
 app conn = App 
   { appDraw = draw
-  , appHandleEvent = \(c,f) ev -> case ev of
-      VtyEvent (V.EvResize {}) -> continue (c,f)
-      VtyEvent (V.EvKey V.KEsc []) -> halt (c,f)
+  , appHandleEvent = \(ns,c,f) ev -> case ev of
+      VtyEvent (V.EvResize {}) -> continue (ns,c,f)
+      VtyEvent (V.EvKey V.KEsc []) -> halt (ns,c,f)
       VtyEvent (V.EvKey V.KEnter []) -> suspendAndResume $ do
         case Text.words ((formState f) ^.cfCommand) of
           ["dp",v] -> do 
             runCarolM conn (const $ return ()) $ deposit (read . Text.unpack $ v)
-            return (c,mkForm $ CommandForm "")
+            return (ns,c,mkForm $ CommandForm "")
           ["wd",v] -> do 
             runCarolM conn (const $ return ()) $ withdraw (read . Text.unpack $ v)
-            return (c,mkForm $ CommandForm "")
+            return (ns,c,mkForm $ CommandForm "")
           ["audit"] -> do c' <- runCarolR conn $ currentS
-                          return (Counter c',mkForm $ CommandForm "")
-          _ -> return (c,f)
-      AppEvent (StoreUpdate c') -> continue (c',f)
+                          return (ns,Counter c',mkForm $ CommandForm "")
+          _ -> return (ns,c,f)
+      AppEvent (StoreUpdate c') -> continue (ns,c',f)
+      AppEvent GotMessage -> continue (Online,c,f)
       _ -> do
         f' <- handleFormEvent ev f
-        continue (c,f')
-  , appChooseCursor = focusRingCursor (formFocus . snd)
+        continue (ns,c,f')
+  , appChooseCursor = focusRingCursor (formFocus . thd)
   , appStartEvent = return
   , appAttrMap = const theMap }
 
@@ -72,10 +81,10 @@ theMap = attrMap V.defAttr
   , (invalidFormInputAttr, V.white `on` V.red)
   , (focusedFormInputAttr, V.black `on` V.yellow) ]
 
-mkUpdateChan :: IO (BChan CustomEvent, Counter -> IO ())
+mkUpdateChan :: IO (BChan CustomEvent, Counter -> IO (), IO ())
 mkUpdateChan = do
   chan <- newBChan 100
-  return (chan, writeBChan chan . StoreUpdate)
+  return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
 
 runUi :: Counter -> ManagerConn c i Counter -> BChan CustomEvent -> IO ()
 runUi s0 conn chan = do
@@ -83,6 +92,6 @@ runUi s0 conn chan = do
         v <- V.mkVty =<< V.standardIOConfig
         V.setMode (V.outputIface v) V.Mouse True
         return v
-      f = (s0, mkForm (CommandForm ""))
+      f = (Offline, s0, mkForm (CommandForm ""))
   f' <- customMain buildVty (Just chan) (app conn) f
   return ()

@@ -127,7 +127,8 @@ data Manager c i s = Manager
   , manRCIndex :: RCIndex i s (Job s IO ())
   , grantMultiplex :: Int
   , batcheff :: [Effect s]
-  , batchSize :: Int }
+  , batchSize :: Int
+  , onGetBroadcastCb :: IO () }
 
 type ManM r c i s k = StateT (Manager c i s) (CvRepCmd r (Store c i s) k IO)
 
@@ -168,6 +169,7 @@ data DManagerSettings c i s = DManagerSettings
   , setBatchSize :: Int
   , onStoreUpdate :: s -> IO ()
   , onHistUpdate :: Hist c i s -> IO ()
+  , onGetBroadcast :: IO ()
   , baseStoreValue :: s }
 
 defaultDManagerSettings :: (Monoid s) => DManagerSettings c i s
@@ -179,6 +181,7 @@ defaultDManagerSettings' s = DManagerSettings
   , setBatchSize = 1
   , onStoreUpdate = const (return ())
   , onHistUpdate = const (return ())
+  , onGetBroadcast = return ()
   , baseStoreValue = s }
 
 -- | Initialize a replica manager.  This returns a 'TQueue' for
@@ -193,7 +196,7 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> Hist c i s -- ^ Initial history
             -> DManagerSettings c i s
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 hist0 (DManagerSettings ts bsize cbS cbH s00) = do
+initManager i os ds r s0 hist0 (DManagerSettings ts bsize cbS cbH cbB s00) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -213,6 +216,7 @@ initManager i os ds r s0 hist0 (DManagerSettings ts bsize cbS cbH s00) = do
         0
         []
         bsize
+        cbB
       onUp = upWithSumms latestState latestHist cbS cbH r s00
   ti <- forkIO $ do
           runCvRep
@@ -272,11 +276,11 @@ handleLatest = do
     ManNew (Right j) -> case j of
       _ -> lstm $ writeTQueue (manJobQueue man) j
     ManNew (Left (BCast s)) -> 
-      lift (incorp s) >> return ()
+      lift (incorp s) >> liftIO (onGetBroadcastCb man)
     ManNew (Left Hello) ->
       -- Respond to a 'Hello' by broadcasting the current state,
       -- bringing the new node up to date.
-      lift bcast >> return ()
+      lift bcast >> liftIO (onGetBroadcastCb man)
     ManRate rci' -> do
       -- liftIO $ putStrLn "RateControl event."
       modify (\m -> m { manRCIndex = rci' })

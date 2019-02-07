@@ -81,10 +81,11 @@ node = do
                                          _ -> return emptyInit
                             _ -> return emptyInit
   
-  (eventChan, onUpdate) <- mkUpdateChan
+  (eventChan, onUpdate, onMessage) <- mkUpdateChan
 
   let script2 i man = runUi initStore man eventChan
-      settings = defaultDManagerSettings { onStoreUpdate = onUpdate }
+      settings = defaultDManagerSettings { onStoreUpdate = onUpdate
+                                         , onGetBroadcast = onMessage }
 
   (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script2
   case pFile conf of
