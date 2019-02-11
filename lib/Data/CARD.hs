@@ -37,6 +37,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
+import qualified Data.List as List
 import GHC.Generics
 import Data.Aeson
 
@@ -187,8 +188,11 @@ instance Monoid (RGArray a) where
   mempty = RGArray mempty
 
 instance (Eq a, Ord a) => CARD (RGArray a) where
-  data Ef (RGArray a) = RGAppend a deriving (Show,Read,Eq,Ord,Generic)
-  defineEffect (RGArray as) (RGAppend a) = RGArray (a:as)
-  
+  data Ef (RGArray a) = RGAppend a
+                      | RGRemove a
+                      deriving (Show,Read,Eq,Ord,Generic)
+  defineEffect (RGArray as) (RGAppend a) = RGArray (as ++ [a])
+  defineEffect (RGArray as) (RGRemove a) = RGArray (List.delete a as)
+
   data Cr (RGArray a) deriving (Show,Read,Eq,Ord,Generic)
   defineConflict _ _ = False
