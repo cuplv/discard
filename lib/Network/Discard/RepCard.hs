@@ -167,8 +167,7 @@ ms2s ms = fromIntegral ms / 1000000
 data DManagerSettings c i s = DManagerSettings
   { timeoutUnitSize :: Int
   , setBatchSize :: Int
-  , onStoreUpdate :: s -> IO ()
-  , onHistUpdate :: Hist c i s -> IO ()
+  , onStoreUpdate :: (s, Hist c i s) -> IO ()
   , onGetBroadcast :: IO ()
   , baseStoreValue :: s }
 
@@ -180,7 +179,6 @@ defaultDManagerSettings' s = DManagerSettings
   { timeoutUnitSize = 100000
   , setBatchSize = 1
   , onStoreUpdate = const (return ())
-  , onHistUpdate = const (return ())
   , onGetBroadcast = return ()
   , baseStoreValue = s }
 
@@ -196,7 +194,7 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> Hist c i s -- ^ Initial history
             -> DManagerSettings c i s
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 hist0 (DManagerSettings ts bsize cbS cbH cbB s00) = do
+initManager i os ds r s0 hist0 (DManagerSettings ts bsize ucb cbB s00) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -217,7 +215,7 @@ initManager i os ds r s0 hist0 (DManagerSettings ts bsize cbS cbH cbB s00) = do
         []
         bsize
         cbB
-      onUp = upWithSumms latestState latestHist cbS cbH r s00
+      onUp = upWithSumms latestState latestHist ucb r s00
   ti <- forkIO $ do
           runCvRep
             r
@@ -449,17 +447,15 @@ lstm = liftIO . atomically
 upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
             => TVar s -- ^ Location to post result
             -> TVar (Hist c i s) -- ^ Location to post history
-            -> (s          -> m ()) -- ^ State update callback
-            -> (Hist c i s -> m ()) -- ^ Hist update callback
+            -> ((s, Hist c i s) -> m ()) -- ^ Update callback
             -> r -- ^ Resolver
             -> s -- ^ Initial value
             -> (s1, Hist c i s) -- ^ History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post postHist cbS cbH r s0 (_,hist) summs = do
+upWithSumms post postHist ucb r s0 (_,hist) summs = do
   s <- evalHist r s0 hist summs
   lstm $ swapTVar post s
   lstm $ swapTVar postHist hist
-  cbS s
-  cbH hist
+  ucb (s,hist)
   return (Map.insert hist s summs)
