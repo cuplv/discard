@@ -1,7 +1,7 @@
 # `discard` #
 
-A library implementing the Carol programming language, providing an
-eDSL for writing operations and a replica system that runs them.
+A library implementing the [Carol programming language][1], providing
+an eDSL for writing operations and a replica system that runs them.
 
 
 ## Quick start ##
@@ -32,16 +32,16 @@ Then, open two terminals, and run the following:
 
     (term 2)$ cabal run discard-demo -- -c 2local.yaml -i beta
 
-Now a node is running in each terminal.  Choose one and type `check`
-to see the current shared account value (0 to start).  Add money with
-`dp INT`, withdraw with `wd INT`.
+Now a node is running in each terminal.  Choose one and type `dp INT`
+to add money to the account, or withdraw with `wd INT`.  You should
+see the balance changes reflected in the other node's interface.
 
 Try testing the safety of the system by running `wd INT` with enough
 value to empty the account simultaneously on two nodes.
 
-You can edit [`Main.hs`][2] to see how the library is used and
-make a more interesting example.  The bank operations are implemented
-in [`Bank.hs`][3].
+You can edit [`Main.hs`][2] to see how the library is used and make a
+more interesting example.  The bank operations, written in the Carol
+language, are defined in [`Bank.hs`][3].
 
 Library documentation, which is still minimal and disorganized, can be
 compiled with `cabal haddock`.
@@ -64,7 +64,7 @@ hasn't been tested in a while...)
     $ stack exec cardr
     ```
 
-[1]: https://arxiv.org/abs/1802.08733
+[1]: https://gateway.ipfs.io/ipfs/Qmf1H4ZmWbwYk6sAaK6RzZe3KsuQbx11KvzX5jaFPwsx8w/carol-lang-2018-12-14.pdf
 [2]: ./demo/Main.hs
 [3]: ./lib/Lang/Carol/Bank.hs
 [4]: https://docs.ipfs.io/introduction/install/

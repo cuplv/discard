@@ -11,6 +11,7 @@ module Network.Discard.Node
   , DManagerSettings (..)
   , defaultDManagerSettings
   , defaultDManagerSettings'
+  , awaitNetwork
   , runNode
   ) where
 

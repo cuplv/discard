@@ -38,7 +38,8 @@ data ConfCLI = ConfCLI
   { confFile :: FilePath
   , nodeName :: String
   , ipfsPort :: Int
-  , pFile :: Maybe FilePath }
+  , pFile :: Maybe FilePath
+  , isOneshot :: Bool }
 
 optionm p os = (Just <$> option p os) <|> pure Nothing
 
@@ -53,6 +54,7 @@ confCLI = execParser $
                        <> help "Node name")
         <*> option auto (long "ipfs-port" <> value 5001)
         <*> optionm str (short 'f' <> metavar "FILE" <> help "Persistent storage file")
+        <*> switch (long "oneshot" <> help "Deposit 10 and exit, instead of interactive session")
       misc = (fullDesc
               <> progDesc "Run a bank account CARD node"
               <> header "discard-demo - a demo application for the Carol language")
@@ -81,13 +83,32 @@ node = do
                                          _ -> return emptyInit
                             _ -> return emptyInit
   
-  (eventChan, onUpdate, onMessage) <- mkUpdateChan
+  if isOneshot conf
 
-  let script2 i man = runUi initStore man eventChan
-      settings = defaultDManagerSettings { onStoreUpdate = onUpdate . fst
-                                         , onGetBroadcast = onMessage }
+     then do (settings, await) <- awaitNetwork defaultDManagerSettings (Just 1000000)
+             let script i man = do
+                   await >>= \case
+                     False -> putStrLn "Network timeout. Continuing in offline mode..."
+                     _ -> return ()
+                   Counter s0 <- runCarolR man (query crT)
+                   putStrLn $ "Starting balance: $" <> show s0 <> "."
+                   d <- runCarolR man (deposit 10)
+                   case d of
+                     Right n -> putStrLn $ "Deposited $" <> show n <> "."
+                     Left e -> putStrLn e
+                   Counter s1 <- runCarolR man (query crT)
+                   putStrLn $ "Ending balance: $" <> show s1 <> "."
+             (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script
+             case pFile conf of
+               Just fp -> encodeFile fp (sf,hf)
+               _ -> return ()
 
-  (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script2
-  case pFile conf of
-    Just fp -> encodeFile fp (sf,hf)
-    _ -> return ()
+     else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
+             let script2 i man = runUi initStore man eventChan
+                 settings = defaultDManagerSettings { onStoreUpdate = onUpdate . fst
+                                                    , onGetBroadcast = onMessage }
+             (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script2
+             case pFile conf of
+               Just fp -> encodeFile fp (sf,hf)
+               _ -> return ()
+

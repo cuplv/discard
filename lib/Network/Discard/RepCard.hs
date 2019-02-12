@@ -16,6 +16,7 @@ module Network.Discard.RepCard
   , initManager
   , defaultDManagerSettings
   , defaultDManagerSettings'
+  , awaitNetwork
   , giveUpdate
   , giveJob
   , getLatest
@@ -181,6 +182,35 @@ defaultDManagerSettings' s = DManagerSettings
   , onStoreUpdate = const (return ())
   , onGetBroadcast = return ()
   , baseStoreValue = s }
+
+-- | A tag to tell awaitNetwork whether it is continuing in online (a
+-- first message was recieved) or offline (the timeout was reached)
+-- mode
+data Proceed = PrMessage | PrTimeout
+
+-- | Create a delay action that waits for either the first remote
+-- message to arrive at the replica or for the optional timeout (in
+-- microseconds).  The return value of the await action is 'True' if a
+-- message has been received and 'False' if a timeout has been
+-- reached.
+awaitNetwork :: DManagerSettings c i s -> Maybe Int -> IO (DManagerSettings c i s, IO Bool)
+awaitNetwork dms timeout = do
+  tv <- newTVarIO Nothing
+  let open pr = lstm $ readTVar tv >>= \case
+                         Nothing -> swapTVar tv (Just pr) >> return ()
+                         _ -> return ()
+
+      await = do case timeout of
+                   Just ms -> do forkIO $ threadDelay ms >> open PrTimeout
+                                 return ()
+                   Nothing -> return ()
+                 lstm $ readTVar tv >>= \case
+                          Just PrMessage -> return True
+                          Just PrTimeout -> return False
+                          Nothing -> retry
+
+      dms' = dms { onGetBroadcast = onGetBroadcast dms >> open PrMessage }
+  return (dms', await)
 
 -- | Initialize a replica manager.  This returns a 'TQueue' for
 -- updates from other replicas and jobs from other threads, and a
