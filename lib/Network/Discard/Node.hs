@@ -13,10 +13,12 @@ module Network.Discard.Node
   , defaultDManagerSettings'
   , awaitNetwork
   , runNode
+  , runNodeFile
   ) where
 
 import System.IO
 import System.Exit
+import System.Directory (doesFileExist)
 import Data.List (genericLength)
 import Control.Monad
 import Control.Monad.Trans (MonadIO,liftIO)
@@ -31,7 +33,7 @@ import System.Random
 
 import Data.CvRDT
 import Data.CARD.Store
-import Data.EventGraph (Edge)
+import Data.EventGraph (Edge,empty)
 
 import Network.Discard.Broadcast
 import Network.Discard.RepCard
@@ -73,6 +75,28 @@ runNode i ipfsPort net s0 hist0 dmsets script = do
   killThread lt
   (sf,hf) <- killManager man
   return (res, sf, hf)
+
+-- | Run a node, loading the initial state from the given file (if it
+-- exists) and writing the final state to the file on exit
+runNodeFile :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i), Monoid s, FromJSON s, ToJSON s)
+            => i -- ^ Name
+            -> Int -- ^ IPFS Port
+            -> NetConf i -- ^ Replica network
+            -> FilePath -- ^ Save-file path
+            -> DManagerSettings c i s
+            -> Script (IpfsEG i) c i s a -- ^ Actions to perform
+            -> IO a
+runNodeFile i ipfsPort net sfile dmsets script = do
+  let trypfile = doesFileExist sfile
+  (initStore,initHist) <- doesFileExist sfile >>= \case
+    True -> decodeFileEither sfile >>= \case
+      Right state -> return state
+      Left e -> do print e
+                   die $ "Safe file \"" <> sfile <> "\" exists but is unreadable."
+    False -> return (mempty, Data.EventGraph.empty)
+  (a,sf,hf) <- runNode i ipfsPort net initStore initHist dmsets script
+  encodeFile sfile (sf,hf)
+  return a
 
 mkListener :: (Carries HttpT (Store c i s))
            => Src HttpT 

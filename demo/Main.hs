@@ -32,7 +32,6 @@ import Interface
 
 main :: IO ()
 main = node
--- main = runUi
 
 data ConfCLI = ConfCLI
   { confFile :: FilePath
@@ -77,12 +76,15 @@ node = do
   net <- decodeFileEither (confFile conf) >>= \case
     Right net -> return net
     Left exc -> print exc >> die "Could not read network configuration file"
-  (initStore,initHist) <- case pFile conf of
-                            Just fp -> tryPFile fp >>= \case
-                                         Just r -> return r
-                                         _ -> return emptyInit
-                            _ -> return emptyInit
-  
+
+  let runNode' settings script = case pFile conf of
+        Just sfile -> 
+          runNodeFile (nodeName conf) (ipfsPort conf) net sfile settings script
+        Nothing -> do
+          (a,_,_) <- runNode (nodeName conf) (ipfsPort conf) net
+                             (Counter 0) Data.EventGraph.empty settings script
+          return a
+
   if isOneshot conf
 
      then do (settings, await) <- awaitNetwork defaultDManagerSettings (Just 1000000)
@@ -98,17 +100,13 @@ node = do
                      Left e -> putStrLn e
                    Counter s1 <- runCarolR man (query crT)
                    putStrLn $ "Ending balance: $" <> show s1 <> "."
-             (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script
-             case pFile conf of
-               Just fp -> encodeFile fp (sf,hf)
-               _ -> return ()
+             runNode' settings script
 
      else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
-             let script2 i man = runUi initStore man eventChan
+             let script i man = do 
+                   initStore <- runCarolR man (query crT)
+                   runUi initStore man eventChan
                  settings = defaultDManagerSettings { onStoreUpdate = onUpdate . fst
                                                     , onGetBroadcast = onMessage }
-             (_, sf, hf) <- runNode (nodeName conf) (ipfsPort conf) net initStore initHist settings script2
-             case pFile conf of
-               Just fp -> encodeFile fp (sf,hf)
-               _ -> return ()
+             runNode' settings script
 
