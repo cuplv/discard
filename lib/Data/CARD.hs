@@ -194,5 +194,15 @@ instance (Eq a, Ord a) => CARD (RGArray a) where
   defineEffect (RGArray as) (RGAppend a) = RGArray (as ++ [a])
   defineEffect (RGArray as) (RGRemove a) = RGArray (List.delete a as)
 
-  data Cr (RGArray a) deriving (Show,Read,Eq,Ord,Generic)
+  data Cr (RGArray a) = CrRGArray deriving (Show,Read,Eq,Ord,Generic)
   defineConflict _ _ = False
+
+instance ToJSON a => ToJSON (RGArray a) where
+  toEncoding = genericToEncoding defaultOptions
+instance FromJSON a => FromJSON (RGArray a)
+instance ToJSON a => ToJSON (Ef (RGArray a)) where
+  toEncoding = genericToEncoding defaultOptions
+instance FromJSON a => FromJSON (Ef (RGArray a))
+instance ToJSON a => ToJSON (Cr (RGArray a)) where
+  toEncoding = genericToEncoding defaultOptions
+instance FromJSON a => FromJSON (Cr (RGArray a))
