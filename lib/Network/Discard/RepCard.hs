@@ -303,8 +303,12 @@ handleLatest = do
   lstm updates >>= \case
     ManNew (Right j) -> case j of
       _ -> lstm $ writeTQueue (manJobQueue man) j
-    ManNew (Left (BCast s)) -> 
-      lift (incorp s) >> liftIO (onGetBroadcastCb man)
+    ManNew (Left (BCast s)) -> do
+      -- If the received broadcast contains new updates, rebroadcast it.
+      lift (incorp s) >>= \case
+        Just _ -> lift bcast >> liftIO (putStrLn "Forwarded novel broadcast.")
+        Nothing -> return ()
+      liftIO (onGetBroadcastCb man)
     ManNew (Left Hello) ->
       -- Respond to a 'Hello' by broadcasting the current state,
       -- bringing the new node up to date.
