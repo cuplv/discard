@@ -20,6 +20,7 @@ module Network.Discard.RepCard
   , giveUpdate
   , giveJob
   , getLatest
+  , getLatestCvState
   , killManager
 
   ) where
@@ -140,22 +141,26 @@ data ManagerConn c i s = ManagerConn
   { eventQueue :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
   , latestStoreVal :: TVar s
   , latestHistVal :: TVar (Hist c i s)
+  , latestCvState :: TVar (Store c i s)
   , manLoopThreadId :: ThreadId }
 
 giveUpdate :: BMsg (Store c i s) -> ManagerConn c i s -> IO ()
-giveUpdate m (ManagerConn q _ _ _) = lstm $ writeTQueue q (Left m)
+giveUpdate m (ManagerConn q _ _ _ _) = lstm $ writeTQueue q (Left m)
 
 giveJob :: Job s IO () -> ManagerConn c i s -> IO ()
-giveJob j (ManagerConn q _ _ _) = lstm $ writeTQueue q (Right j)
+giveJob j (ManagerConn q _ _ _ _) = lstm $ writeTQueue q (Right j)
 
 getLatest :: ManagerConn c i s -> IO s
-getLatest (ManagerConn _ v _ _) = readTVarIO v
+getLatest (ManagerConn _ v _ _ _) = readTVarIO v
 
 getLatestHist :: ManagerConn c i s -> IO (Hist c i s)
-getLatestHist (ManagerConn _ _ h _) = readTVarIO h
+getLatestHist (ManagerConn _ _ h _ _) = readTVarIO h
+
+getLatestCvState :: ManagerConn c i s -> IO (Store c i s)
+getLatestCvState (ManagerConn _ _ _ s _) = readTVarIO s
 
 killManager :: ManagerConn c i s -> IO (s, Hist c i s)
-killManager conn@(ManagerConn _ _ _ i) = do 
+killManager conn@(ManagerConn _ _ _ _ i) = do 
   sFinal <- getLatest conn
   hFinal <- getLatestHist conn
   killThread i
@@ -229,6 +234,7 @@ initManager i os ds r s0 hist0 (DManagerSettings ts bsize ucb cbB s00) = do
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
   latestHist <- newTVarIO hist0
+  latestFullState <- newTVarIO (mempty,hist0)
   rci <- newRCIndex (ms2s ts)
   let bc = broadcast ds
       manager = Manager
@@ -245,7 +251,7 @@ initManager i os ds r s0 hist0 (DManagerSettings ts bsize ucb cbB s00) = do
         []
         bsize
         cbB
-      onUp = upWithSumms latestState latestHist ucb r s00
+      onUp = upWithSumms latestState latestHist latestFullState ucb r s00
   ti <- forkIO $ do
           runCvRep
             r
@@ -253,9 +259,21 @@ initManager i os ds r s0 hist0 (DManagerSettings ts bsize ucb cbB s00) = do
             (Map.fromList [(hist0,s0)])
             bc
             onUp 
-            (runStateT ((lift . lift $ helloAll ds) >> managerLoop) manager)
+            (runStateT (doHellos ds cbB >> managerLoop) manager)
           return ()
-  return $ ManagerConn eventQueue latestState latestHist ti
+  return $ ManagerConn eventQueue latestState latestHist latestFullState ti
+
+doHellos :: (ManC r c i s k, Transport t, Carries t (Store c i s), Res t ~ IO) 
+         => [Dest t] 
+         -> IO ()
+         -> ManM r c i s k ()
+doHellos ds cbB = do
+  ups <- lift . lift $ helloAll ds
+  lift $ mapM_ incorp ups
+  case ups of
+    [] -> return ()
+    _ -> liftIO cbB
+  lift bcast
 
 managerLoop :: (ManC r c i s k) => ManM r c i s k ()
 managerLoop = do
@@ -306,13 +324,14 @@ handleLatest = do
     ManNew (Left (BCast s)) -> do
       -- If the received broadcast contains new updates, rebroadcast it.
       lift (incorp s) >>= \case
-        Just _ -> lift bcast >> liftIO (putStrLn "Forwarded novel broadcast.")
+        Just _ -> lift bcast
         Nothing -> return ()
       liftIO (onGetBroadcastCb man)
     ManNew (Left Hello) ->
-      -- Respond to a 'Hello' by broadcasting the current state,
-      -- bringing the new node up to date.
-      lift bcast >> liftIO (onGetBroadcastCb man)
+      -- -- Respond to a 'Hello' by broadcasting the current state,
+      -- -- bringing the new node up to date.
+      -- lift bcast >> liftIO (onGetBroadcastCb man)
+      return ()
     ManRate rci' -> do
       -- liftIO $ putStrLn "RateControl event."
       modify (\m -> m { manRCIndex = rci' })
@@ -481,15 +500,17 @@ lstm = liftIO . atomically
 upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
             => TVar s -- ^ Location to post result
             -> TVar (Hist c i s) -- ^ Location to post history
+            -> TVar (Store c i s)
             -> ((s, Hist c i s) -> m ()) -- ^ Update callback
             -> r -- ^ Resolver
             -> s -- ^ Initial value
-            -> (s1, Hist c i s) -- ^ History to evaluate
+            -> Store c i s -- ^ Locks + History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post postHist ucb r s0 (_,hist) summs = do
+upWithSumms post postHist postState ucb r s0 (ls,hist) summs = do
   s <- evalHist r s0 hist summs
   lstm $ swapTVar post s
   lstm $ swapTVar postHist hist
+  lstm $ swapTVar postState (ls,hist)
   ucb (s,hist)
   return (Map.insert hist s summs)

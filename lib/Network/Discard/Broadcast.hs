@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Network.Discard.Broadcast 
   ( BMsg (..)
@@ -34,6 +35,7 @@ import Network.HTTP.Types
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad (foldM)
+import Data.Maybe (catMaybes)
 
 -- | 'BCast' constructs a broadcast for whatever data is being
 -- carried, and 'Hello' constructs a simple "I'm new here"
@@ -49,26 +51,27 @@ class Transport t where
   data Dest t
   data Src t
   type Res t :: * -> *
-  -- | Send a 'Hello' message
-  hello :: Dest t -> Res t ()
 
 class Carries t s where
   send :: Dest t -> BMsg s -> Res t ()
-  listen :: Src t -> (BMsg s -> Res t Bool) -> Res t ()
 
+  -- | Asdf
+  listen :: Src t -> (BMsg s -> Res t (Bool, Maybe (BMsg s))) -> Res t ()
+  -- | Send a 'Hello' message
+  hello :: Dest t -> Res t (Maybe (BMsg s))
 ---
 
 instance Transport (TChan (BMsg s)) where
   data Dest (TChan (BMsg s)) = OutChan (TChan (BMsg s))
   data Src (TChan (BMsg s)) = InChan (TChan (BMsg s))
   type Res (TChan (BMsg s)) = STM
-  hello (OutChan chan) = writeTChan chan Hello
 
 instance Carries (TChan (BMsg s)) s where
+  hello (OutChan chan) = writeTChan chan Hello >> return Nothing
   send (OutChan chan) msg = writeTChan chan msg
   listen (InChan chan) handle = do
     msg <- readTChan chan
-    cont <- handle msg
+    (cont,mresp) <- handle msg
     if cont
        then listen (InChan chan) handle
        else return ()
@@ -79,28 +82,34 @@ instance Transport HttpT where
   data Dest HttpT = HttpDest Client.Manager Client.Request
   data Src HttpT = HttpSrc Port
   type Res HttpT = IO
-  hello (HttpDest man dest) = do
-    let req = dest { Client.method = "GET"
-                   , Client.requestBody = Client.RequestBodyLBS $ "HELLO" }
-    catch (Client.httpLbs req man >> return ()) (\(Client.HttpExceptionRequest _ _) -> return ())
-    -- putStr "SEND: " >> print (encode msg)
-    return ()
 
-msgGetter :: (ToJSON (BMsg s), FromJSON (BMsg s)) => (BMsg s -> IO Bool) -> Application
+msgGetter :: (ToJSON (BMsg s), FromJSON (BMsg s)) 
+          => (BMsg s -> IO (Bool, Maybe (BMsg s))) 
+          -> Application
 msgGetter handle request respond = do
   body <- strictRequestBody request
   -- Check for HELLO, otherwise parse as JSON
-  case body of
-    "HELLO" -> handle Hello
-    _ -> case decode body of
-           Just msg -> handle msg
-  respond $ responseLBS status200 [] "OK"
+  (_,mresp) <- case body of
+                 "HELLO" -> handle Hello
+                 _ -> case decode body of
+                        Just msg -> handle msg
+  case mresp of
+    Just r -> respond $ responseLBS status200 [] (encode r)
+    Nothing -> respond $ responseLBS status200 [] ""
 
 instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
+  hello (HttpDest man dest) = do
+    let req = dest { Client.method = "GET"
+                   , Client.requestBody = Client.RequestBodyLBS $ "HELLO" }
+        sendRcv = do 
+          resp <- Client.httpLbs req man
+          return $ decode' (Client.responseBody resp)
+    catch sendRcv (\(Client.HttpExceptionRequest _ _) -> return Nothing)
   send (HttpDest man dest) msg = do
     let req = dest { Client.method = "POST"
                    , Client.requestBody = Client.RequestBodyLBS $ encode msg }
-    catch (Client.httpLbs req man >> return ()) (\(Client.HttpExceptionRequest _ _) -> return ())
+    catch (Client.httpLbs req man >> return ()) 
+          (\(Client.HttpExceptionRequest _ _) -> return ())
     -- putStr "SEND: " >> print (encode msg)
     return ()
   listen (HttpSrc p) handle = do
@@ -137,5 +146,10 @@ broadcast :: (Monad (Res t), Transport t, Carries t s) => [Dest t] -> s -> Res t
 broadcast others s = mapM_ (flip send (BCast s)) others
 
 -- | Send a 'Hello' message to all destinations
-helloAll :: (Monad (Res t), Transport t) => [Dest t] -> Res t ()
-helloAll others = mapM_ hello others
+helloAll :: (Monad (Res t), Transport t, Carries t s) => [Dest t] -> Res t [s]
+helloAll others = do 
+  resps <- mapM hello others
+  return . catMaybes $ map (\case
+                               Just (BCast s) -> Just s
+                               _ -> Nothing) 
+                           resps

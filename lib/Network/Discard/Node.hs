@@ -103,8 +103,12 @@ mkListener :: (Carries HttpT (Store c i s))
            -> ManagerConn c i s
            -> IO ThreadId
 mkListener src man = 
-  forkIO (listen src (\m -> giveUpdate m man 
-                            >> return True))
+  forkIO (listen src handle)
+  where handle m = case m of
+          Hello -> do s <- getLatestCvState man
+                      giveUpdate m man
+                      return (True,Just (BCast s))
+          m -> giveUpdate m man >> return (True, Nothing)
 
 mkMan :: IO Manager
 mkMan = newManager defaultManagerSettings
