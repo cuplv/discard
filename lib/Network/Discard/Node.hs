@@ -13,6 +13,7 @@ module Network.Discard.Node
   , defaultDManagerSettings'
   , awaitNetwork
   , runNode
+  , runNode'
   , runNodeFile
   ) where
 
@@ -47,21 +48,18 @@ type Script r c i s a =
   -> ManagerConn c i s
   -> IO a
 
--- | Run a complete replica node, establishing network and state
--- management threads, and execute a replica script on it.
---
--- If/when the script terminates, the replica node will be torn down
--- and background threads killed.
-runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
-        => i  -- ^ Name
-        -> Int -- ^ IPFS Port
-        -> NetConf i -- ^ Replica network
-        -> s -- ^ Initial store value
-        -> Hist c i s -- ^ Initial history
-        -> DManagerSettings c i s
-        -> Script (IpfsEG i) c i s a -- ^ Actions to perform
-        -> IO (a, s, Hist c i s)
-runNode i ipfsPort net s0 hist0 dmsets script = do
+-- | Run a replica node, explicitly providing an initial state.  Make
+-- sure the initial store value matches the initial store history!
+runNode' :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
+         => i  -- ^ Name
+         -> Int -- ^ IPFS Port
+         -> NetConf i -- ^ Replica network
+         -> s -- ^ Initial store value
+         -> Store c i s -- ^ Initial store (locks + history
+         -> DManagerSettings c i s
+         -> Script (IpfsEG i) c i s a -- ^ Actions to perform
+         -> IO (a, (s, Store c i s))
+runNode' i ipfsPort net val0 store0 dmsets script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
@@ -69,16 +67,36 @@ runNode i ipfsPort net s0 hist0 dmsets script = do
   ipfsr <- mkIpfsEG "localhost" ipfsPort i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
-  man <- initManager i otherIds otherDests ipfsr s0 hist0 dmsets
+  man <- initManager i otherIds otherDests ipfsr val0 store0 dmsets
   lt <- mkListener (mkSrc port) man
   res <- script i man
   killThread lt
-  (sf,hf) <- killManager man
-  return (res, sf, hf)
+  stateFinal <- killManager man
+  return (res, stateFinal)
+
+-- | Run a complete replica node, establishing network and state
+-- management threads, and execute a replica script on it.
+--
+-- If/when the script terminates, the replica node will be torn down
+-- and background threads killed.  The node will start with an empty
+-- history and will be brought up-to-date by broadcasts from the
+-- network.
+runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
+        => i -- ^ name
+        -> Int -- ^ IPFS Port
+        -> NetConf i -- ^ Replica network
+        -> DManagerSettings c i s
+        -> Script (IpfsEG i) c i s a
+        -> IO a
+runNode i ipfsPort net dmsets script = 
+  fst <$> runNode' i ipfsPort net val0 store0 dmsets script
+  where val0 = baseStoreValue dmsets
+        store0 = (mempty, Data.EventGraph.empty)
 
 -- | Run a node, loading the initial state from the given file (if it
--- exists) and writing the final state to the file on exit
-runNodeFile :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i), Monoid s, FromJSON s, ToJSON s)
+-- exists) and writing the final state to the file on exit (creating
+-- it if it does not exist).
+runNodeFile :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i), FromJSON s, ToJSON s)
             => i -- ^ Name
             -> Int -- ^ IPFS Port
             -> NetConf i -- ^ Replica network
@@ -88,14 +106,14 @@ runNodeFile :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSO
             -> IO a
 runNodeFile i ipfsPort net sfile dmsets script = do
   let trypfile = doesFileExist sfile
-  (initStore,initHist) <- doesFileExist sfile >>= \case
+  (val0,store0) <- doesFileExist sfile >>= \case
     True -> decodeFileEither sfile >>= \case
       Right state -> return state
       Left e -> do print e
                    die $ "Safe file \"" <> sfile <> "\" exists but is unreadable."
-    False -> return (mempty, Data.EventGraph.empty)
-  (a,sf,hf) <- runNode i ipfsPort net initStore initHist dmsets script
-  encodeFile sfile (sf,hf)
+    False -> return (baseStoreValue dmsets, (mempty,Data.EventGraph.empty))
+  (a,stateFinal) <- runNode' i ipfsPort net val0 store0 dmsets script
+  encodeFile sfile stateFinal
   return a
 
 mkListener :: (Carries HttpT (Store c i s))
@@ -105,7 +123,7 @@ mkListener :: (Carries HttpT (Store c i s))
 mkListener src man = 
   forkIO (listen src handle)
   where handle m = case m of
-          Hello -> do s <- getLatestCvState man
+          Hello -> do s <- getLatestStore man
                       giveUpdate m man
                       return (True,Just (BCast s))
           m -> giveUpdate m man >> return (True, Nothing)

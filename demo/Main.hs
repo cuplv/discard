@@ -81,9 +81,7 @@ node = do
         Just sfile -> 
           runNodeFile (nodeName conf) (ipfsPort conf) net sfile settings script
         Nothing -> do
-          (a,_,_) <- runNode (nodeName conf) (ipfsPort conf) net
-                             (Counter 0) Data.EventGraph.empty settings script
-          return a
+          runNode (nodeName conf) (ipfsPort conf) net settings script
 
   if isOneshot conf
 
@@ -106,7 +104,7 @@ node = do
              let script i man = do 
                    initStore <- runCarolR man (query crT)
                    runUi initStore man eventChan
-                 settings = defaultDManagerSettings { onStoreUpdate = onUpdate . fst
+                 settings = defaultDManagerSettings { onValUpdate = onUpdate
                                                     , onGetBroadcast = onMessage }
              runNode' settings script
 

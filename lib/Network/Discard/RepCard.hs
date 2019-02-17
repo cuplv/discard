@@ -19,8 +19,9 @@ module Network.Discard.RepCard
   , awaitNetwork
   , giveUpdate
   , giveJob
-  , getLatest
-  , getLatestCvState
+  , getLatestState
+  , getLatestVal
+  , getLatestStore
   , killManager
 
   ) where
@@ -69,7 +70,7 @@ handleQM :: (CARD s)
          -> ManagerConn i r s -- ^ Manager to handle if necessary
          -> HelpMe (Conref s) s (a, Effect s)
          -> IO ()
-handleQM fin man h = handleQ fin (getLatest man) h >>= \case
+handleQM fin man h = handleQ fin (getLatestVal man) h >>= \case
   Finish m -> m
   j -> giveJob j man
 
@@ -124,8 +125,7 @@ data Manager c i s = Manager
   , manJobQueue :: TQueue (Job s IO ())
   , manWaitingRoom :: [(Conref s, s -> IO (Job s IO ()))]
   , manCurrentJob :: Workspace (Job s IO ())
-  , manLatest :: TVar s
-  , manLatestHist :: TVar (Hist c i s)
+  , manLatest :: TVar (s, Store c i s)
   , manRCIndex :: RCIndex i s (Job s IO ())
   , grantMultiplex :: Int
   , batcheff :: [Effect s]
@@ -139,32 +139,35 @@ instance (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) 
 
 data ManagerConn c i s = ManagerConn 
   { eventQueue :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
-  , latestStoreVal :: TVar s
-  , latestHistVal :: TVar (Hist c i s)
-  , latestCvState :: TVar (Store c i s)
+  , latestState :: TVar (s, Store c i s)
   , manLoopThreadId :: ThreadId }
 
+stateStore :: Lens' (s, Store c i s) (Store c i s)
+stateStore = _2
+
+stateVal :: Lens' (s, Store c i s) s
+stateVal = _1
+
 giveUpdate :: BMsg (Store c i s) -> ManagerConn c i s -> IO ()
-giveUpdate m (ManagerConn q _ _ _ _) = lstm $ writeTQueue q (Left m)
+giveUpdate m (ManagerConn q _ _) = lstm $ writeTQueue q (Left m)
 
 giveJob :: Job s IO () -> ManagerConn c i s -> IO ()
-giveJob j (ManagerConn q _ _ _ _) = lstm $ writeTQueue q (Right j)
+giveJob j (ManagerConn q _ _) = lstm $ writeTQueue q (Right j)
 
-getLatest :: ManagerConn c i s -> IO s
-getLatest (ManagerConn _ v _ _ _) = readTVarIO v
+getLatestState :: ManagerConn c i s -> IO (s, Store c i s)
+getLatestState (ManagerConn _ v _) = readTVarIO v
 
-getLatestHist :: ManagerConn c i s -> IO (Hist c i s)
-getLatestHist (ManagerConn _ _ h _ _) = readTVarIO h
+getLatestVal :: ManagerConn c i s -> IO s
+getLatestVal m = (^.stateVal) <$> getLatestState m
 
-getLatestCvState :: ManagerConn c i s -> IO (Store c i s)
-getLatestCvState (ManagerConn _ _ _ s _) = readTVarIO s
+getLatestStore :: ManagerConn c i s -> IO (Store c i s)
+getLatestStore m = (^.stateStore) <$> getLatestState m
 
-killManager :: ManagerConn c i s -> IO (s, Hist c i s)
-killManager conn@(ManagerConn _ _ _ _ i) = do 
-  sFinal <- getLatest conn
-  hFinal <- getLatestHist conn
+killManager :: ManagerConn c i s -> IO (s, Store c i s)
+killManager conn@(ManagerConn _ _ i) = do 
+  sFinal <- getLatestState conn
   killThread i
-  return (sFinal, hFinal)
+  return sFinal
 
 -- | Microseconds to seconds
 ms2s :: (Fractional a) => Int -> a
@@ -173,18 +176,24 @@ ms2s ms = fromIntegral ms / 1000000
 data DManagerSettings c i s = DManagerSettings
   { timeoutUnitSize :: Int
   , setBatchSize :: Int
-  , onStoreUpdate :: (s, Hist c i s) -> IO ()
+  , onUpdate :: (s, Store c i s) -> IO ()
+  , onValUpdate :: s -> IO ()
+  , onLockUpdate :: Locks i s -> IO ()
   , onGetBroadcast :: IO ()
   , baseStoreValue :: s }
 
+-- | Default settings using 'mempty' for the base store value.
 defaultDManagerSettings :: (Monoid s) => DManagerSettings c i s
 defaultDManagerSettings = defaultDManagerSettings' mempty
 
+-- | Default settings with an explicitly provided base store value.
 defaultDManagerSettings' :: s -> DManagerSettings c i s
 defaultDManagerSettings' s = DManagerSettings
   { timeoutUnitSize = 100000
   , setBatchSize = 1
-  , onStoreUpdate = const (return ())
+  , onUpdate = const $ return ()
+  , onValUpdate = const $ return ()
+  , onLockUpdate = const $ return ()
   , onGetBroadcast = return ()
   , baseStoreValue = s }
 
@@ -195,10 +204,12 @@ data Proceed = PrMessage | PrTimeout
 
 -- | Create a delay action that waits for either the first remote
 -- message to arrive at the replica or for the optional timeout (in
--- microseconds).  The return value of the await action is 'True' if a
--- message has been received and 'False' if a timeout has been
--- reached.
-awaitNetwork :: DManagerSettings c i s -> Maybe Int -> IO (DManagerSettings c i s, IO Bool)
+-- microseconds).  The return value of the await action is 'Just' @i@
+-- if a message has been received (from node @i@) and 'Nothing' if a
+-- timeout has been reached.
+awaitNetwork :: DManagerSettings c i s 
+             -> Maybe Int 
+             -> IO (DManagerSettings c i s, IO Bool)
 awaitNetwork dms timeout = do
   tv <- newTVarIO Nothing
   let open pr = lstm $ readTVar tv >>= \case
@@ -226,15 +237,13 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> [Dest t] -- ^ Broadcast targets
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
-            -> Hist c i s -- ^ Initial history
+            -> Store c i s -- ^ Initial history + locks
             -> DManagerSettings c i s
             -> IO (ManagerConn c i s)
-initManager i os ds r s0 hist0 (DManagerSettings ts bsize ucb cbB s00) = do
+initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
-  latestState <- newTVarIO s0
-  latestHist <- newTVarIO hist0
-  latestFullState <- newTVarIO (mempty,hist0)
+  latestState <- newTVarIO (val0,store0)
   rci <- newRCIndex (ms2s ts)
   let bc = broadcast ds
       manager = Manager
@@ -245,23 +254,22 @@ initManager i os ds r s0 hist0 (DManagerSettings ts bsize ucb cbB s00) = do
         []
         Idle
         latestState
-        latestHist
         rci
         0
         []
         bsize
-        cbB
-      onUp = upWithSumms latestState latestHist latestFullState ucb r s00
+        msgCb
+      onUp = upWithSumms latestState upCb upCbVal upCbLocks r valBase
   ti <- forkIO $ do
           runCvRep
             r
-            (mempty,hist0)
-            (Map.fromList [(hist0,s0)])
+            store0
+            (Map.fromList [(store0^.hist,val0)])
             bc
             onUp 
-            (runStateT (doHellos ds cbB >> managerLoop) manager)
+            (runStateT (doHellos ds msgCb >> managerLoop) manager)
           return ()
-  return $ ManagerConn eventQueue latestState latestHist latestFullState ti
+  return $ ManagerConn eventQueue latestState ti
 
 doHellos :: (ManC r c i s k, Transport t, Carries t (Store c i s), Res t ~ IO) 
          => [Dest t] 
@@ -362,7 +370,7 @@ anyWaiting = manWaitingRoom <$> get >>= \case
     _ -> return True
 
 manGetLatest :: (ManC r c i s k) => ManM r c i s k s
-manGetLatest = lstm . readTVar =<< manLatest <$> get
+manGetLatest = (^.stateVal) <$> (lstm . readTVar =<< manLatest <$> get)
 
 putOnHold :: (ManC r c i s k) => Conref s -> (s -> IO (Job s IO ())) -> ManM r c i s k ()
 putOnHold c fj = do
@@ -405,7 +413,7 @@ workOnJob = manCurrentJob <$> get >>= \case
         if not $ requested i c ls
            then lift (emitOn' locks $ return . request i c) >> return ()
            else if confirmed i others ls
-                   then do advJob . f =<< lstm . readTVar =<< manLatest <$> get
+                   then do advJob . f =<< manGetLatest
                            workOnJob
                    else return ()
       Emit e m -> do
@@ -497,20 +505,25 @@ resurrectFails = do
 lstm :: MonadIO m => STM a -> m a
 lstm = liftIO . atomically
 
-upWithSumms :: (MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
-            => TVar s -- ^ Location to post result
-            -> TVar (Hist c i s) -- ^ Location to post history
-            -> TVar (Store c i s)
-            -> ((s, Hist c i s) -> m ()) -- ^ Update callback
+upWithSumms :: (Eq i, MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
+            => TVar (s, Store c i s) -- ^ Location to post store
+            -> ((s, Store c i s) -> m ()) -- ^ Main update callback
+            -> (s -> m ()) -- ^ Val-only update callback
+            -> (Locks i s -> m ()) -- ^ Locks-only update callback
             -> r -- ^ Resolver
-            -> s -- ^ Initial value
+            -> s -- ^ Base store value
             -> Store c i s -- ^ Locks + History to evaluate
             -> Map (Hist c i s) s -- ^ Summaries to use
             -> m (Map (Hist c i s) s)
-upWithSumms post postHist postState ucb r s0 (ls,hist) summs = do
-  s <- evalHist r s0 hist summs
-  lstm $ swapTVar post s
-  lstm $ swapTVar postHist hist
-  lstm $ swapTVar postState (ls,hist)
-  ucb (s,hist)
-  return (Map.insert hist s summs)
+upWithSumms stateV upCb upCbVal upCbLocks r valBase store' summs = do
+  (val,store) <- lstm$ readTVar stateV
+  val' <- evalHist r valBase (store'^.hist) summs
+  lstm $ swapTVar stateV (val',store')
+  upCb (val',store)
+  if val /= val'
+     then upCbVal val'
+     else return ()
+  if store^.locks /= store'^.locks
+     then upCbLocks (store'^.locks)
+     else return ()
+  return (Map.insert (store'^.hist) val' summs)
