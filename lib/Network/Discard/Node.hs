@@ -5,8 +5,6 @@
 
 module Network.Discard.Node
   ( Script
-  , runCarolR
-  , runCarolM
   , ManagerConn
   , DManagerSettings (..)
   , defaultDManagerSettings

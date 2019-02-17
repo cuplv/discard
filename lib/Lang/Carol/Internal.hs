@@ -1,9 +1,14 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Lang.Carol.Internal
   ( CarolNode (..)
   , Carol
   , CarolEnv
+  , CCarrier (..)
+  , carol
+  , carolAsync
+  , carolAsync'
   , HelpMe (..)
   , helpMe
   , staticApp
@@ -13,6 +18,7 @@ module Lang.Carol.Internal
   , evalCarol
   , issue
   , query
+  , queryT
   , module Control.Monad.Free
 
   ) where
@@ -36,6 +42,32 @@ instance Functor (CarolNode s) where
 type Carol s = Free (CarolNode s)
 
 type CarolEnv s m = ReaderT (Conref s -> m s) (StateT (Effect s) m)
+
+----------------------------------------------------------------------
+
+-- | A "carrier" for a specific 'CARD'.
+class (CARD s, Monad m) => CCarrier c s m where
+  handleQ :: c -> HelpMe (Conref s) s (a, Effect s) -> m a
+  handleQAsync :: c -> HelpMe (Conref s) s (a, Effect s) -> (a -> m ()) -> m ()
+
+-- | Run a Carol operation using the provided carrier.
+carol :: (CCarrier c s m) => c -> Carol s a -> m a
+carol c t = handleQ c (runCarol' t)
+
+-- | Run a Carol operation in the background, taking a particular
+-- action after it terminates.
+carolAsync :: (CCarrier c s m) 
+           => c 
+           -> Carol s a 
+           -> (a -> m ()) -- ^ Action to perform after operation
+                          -- terminates
+           -> m ()
+carolAsync c t fin = handleQAsync c (runCarol' t) fin
+
+-- | Run a Carol operation in the background, with no post-termination
+-- action
+carolAsync' :: (CCarrier c s m) => c -> Carol s a -> m ()
+carolAsync' c t = handleQAsync c (runCarol' t) (const $ return ())
 
 ----------------------------------------------------------------------
 
@@ -82,3 +114,6 @@ issue e = Free (Issue e (Pure ()))
 
 query :: (CARD s) => Conref s -> Carol s s
 query c = Free (Query c Pure)
+
+queryT :: (CARD s) => Carol s s
+queryT = query crT

@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 import Network.HTTP.Types
 import Network.Wai
@@ -133,7 +134,7 @@ expScript econf i man = do
           . map (chooseOp bankProfile (expMix econf))
           . randomRs (1,100) 
           <$> getStdGen :: IO [(Int,(String,Carol Counter ()))]
-  let mkRequest (n,(s,t)) = stamp (n,s) startQ >> runCarolM man (const $ stamp n endQ) t
+  let mkRequest (n,(s,t)) = stamp (n,s) startQ >> carolAsync man t (const $ stamp n endQ)
       rc startTime (r:rs) = do 
         mkRequest r
         threadDelay (oneSec `div` expRate econf)

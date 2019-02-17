@@ -20,7 +20,7 @@ import qualified Brick.Widgets.Edit as E
 import Lens.Micro.Platform
 
 import Data.CARD
-import Network.Discard
+import Lang.Carol
 import Lang.Carol.Bank
 
 data CustomEvent = StoreUpdate Counter | GotMessage deriving Show
@@ -47,9 +47,10 @@ draw (ns,(Counter b),f) =
 
 thd (_,_,a) = a
 
-app :: ManagerConn c i Counter
+app :: (CCarrier c Counter IO) 
+    => c
     -> App (St CustomEvent) CustomEvent Name
-app conn = App 
+app cc = App 
   { appDraw = draw
   , appHandleEvent = \(ns,c,f) ev -> case ev of
       VtyEvent (V.EvResize {}) -> continue (ns,c,f)
@@ -57,12 +58,12 @@ app conn = App
       VtyEvent (V.EvKey V.KEnter []) -> suspendAndResume $ do
         case Text.words ((formState f) ^.cfCommand) of
           ["dp",v] -> do 
-            runCarolM conn (const $ return ()) $ deposit (read . Text.unpack $ v)
+            carolAsync' cc $ deposit (read . Text.unpack $ v)
             return (ns,c,mkForm $ CommandForm "")
           ["wd",v] -> do 
-            runCarolM conn (const $ return ()) $ withdraw (read . Text.unpack $ v)
+            carolAsync' cc $ withdraw (read . Text.unpack $ v)
             return (ns,c,mkForm $ CommandForm "")
-          ["audit"] -> do c' <- runCarolR conn $ currentS
+          ["audit"] -> do c' <- carol cc currentS
                           return (ns,Counter c',mkForm $ CommandForm "")
           _ -> return (ns,c,f)
       AppEvent (StoreUpdate c') -> continue (ns,c',f)
@@ -86,7 +87,7 @@ mkUpdateChan = do
   chan <- newBChan 100
   return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
 
-runUi :: Counter -> ManagerConn c i Counter -> BChan CustomEvent -> IO ()
+runUi :: (CCarrier c Counter IO) => Counter -> c -> BChan CustomEvent -> IO ()
 runUi s0 conn chan = do
   let buildVty = do
         v <- V.mkVty =<< V.standardIOConfig

@@ -90,19 +90,19 @@ node = do
                    await >>= \case
                      False -> putStrLn "Network timeout. Continuing in offline mode..."
                      _ -> return ()
-                   Counter s0 <- runCarolR man (query crT)
+                   Counter s0 <- carol man queryT
                    putStrLn $ "Starting balance: $" <> show s0 <> "."
-                   d <- runCarolR man (deposit 10)
+                   d <- carol man $ deposit 10
                    case d of
                      Right n -> putStrLn $ "Deposited $" <> show n <> "."
                      Left e -> putStrLn e
-                   Counter s1 <- runCarolR man (query crT)
+                   Counter s1 <- carol man $ queryT
                    putStrLn $ "Ending balance: $" <> show s1 <> "."
              runNode' settings script
 
      else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
              let script i man = do 
-                   initStore <- runCarolR man (query crT)
+                   initStore <- carol man $ queryT
                    runUi initStore man eventChan
                  settings = defaultDManagerSettings { onValUpdate = onUpdate
                                                     , onGetBroadcast = onMessage }

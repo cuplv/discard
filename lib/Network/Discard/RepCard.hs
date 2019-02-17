@@ -42,7 +42,7 @@ import Control.Lens
 
 import Data.CvRDT
 import Data.CARD.Store
-import Lang.Carol
+import Lang.Carol.Internal
 import Network.Discard.RateControl
 import Network.Discard.Broadcast
 
@@ -51,15 +51,15 @@ data Job s m a =
   | Request (Conref s) (s -> m (Job s m a))
   | Finish             (     m a          )
 
-handleQ :: (Monad m, CARD s)
+handleQ' :: (Monad m, CARD s)
         => (r -> m a) -- ^ Return callback
         -> m s -- ^ Latest store ref
         -> HelpMe (Conref s) s (r, Effect s)
         -> m (Job s m a)
-handleQ fin latest = \case
+handleQ' fin latest = \case
   HelpMe c f 
-    | c == crT -> handleQ fin latest . f =<< latest
-    | otherwise -> return (Request c (handleQ fin latest . f))
+    | c == crT -> handleQ' fin latest . f =<< latest
+    | otherwise -> return (Request c (handleQ' fin latest . f))
   GotIt (r,e) 
     | e == ef0 -> return finish
     | otherwise -> return (Emit e (return finish))
@@ -70,7 +70,7 @@ handleQM :: (CARD s)
          -> ManagerConn i r s -- ^ Manager to handle if necessary
          -> HelpMe (Conref s) s (a, Effect s)
          -> IO ()
-handleQM fin man h = handleQ fin (getLatestVal man) h >>= \case
+handleQM fin man h = handleQ' fin (getLatestVal man) h >>= \case
   Finish m -> m
   j -> giveJob j man
 
@@ -141,6 +141,10 @@ data ManagerConn c i s = ManagerConn
   { eventQueue :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
   , latestState :: TVar (s, Store c i s)
   , manLoopThreadId :: ThreadId }
+
+instance (CARD s) => CCarrier (ManagerConn c i s) s IO where
+  handleQ = handleQR
+  handleQAsync c h fin = handleQM fin c h
 
 stateStore :: Lens' (s, Store c i s) (Store c i s)
 stateStore = _2

@@ -1,12 +1,17 @@
 module Lang.Carol 
-  ( Carol
-  , HelpMe (..)
-  , helpMe
-  , runCarol
-  , runCarol'
+  ( -- * Building Carol operations
+    Carol
   , issue
   , query
+  , queryT
   , assert
+
+    -- * Running Carol operations
+  , CCarrier
+  , carol
+  , carolAsync
+  , carolAsync'
+
   , module Data.CARD
 
   ) where
