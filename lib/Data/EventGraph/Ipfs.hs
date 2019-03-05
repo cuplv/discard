@@ -76,12 +76,11 @@ instance (Ord i, FromJSON i, FromJSONKey i, Ord d, FromJSON d) => FromJSON (Even
 
 -- | Creates an IPFS 'EventGraph' resolver using an IPFS daemon
 -- reachable at the given hostname and port.
-mkIpfsEG :: String -- ^ Hostname (such as "localhost")
-             -> Int -- ^ Port
-             -> i -- ^ Replica ID
-             -> IO (IpfsEG i)
-mkIpfsEG hostname port i = IpfsEG <$> mkIpfsHttp hostname port <*> pure i
+mkIpfsEG :: String -- ^ URI (such as "http://localhost:5001")
+         -> i -- ^ Replica ID
+         -> IO (IpfsEG i)
+mkIpfsEG uri i = IpfsEG <$> mkIpfsHttp uri <*> pure i
 
 -- | Resolver using the default port (5001) on "localhost"
 mkIpfsEG' :: i -> IO (IpfsEG i)
-mkIpfsEG' = mkIpfsEG "localhost" 5001
+mkIpfsEG' = mkIpfsEG "http://localhost:5001"

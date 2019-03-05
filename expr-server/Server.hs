@@ -40,6 +40,9 @@ data ServerConf i = ServerConf
   , ipfsPort :: Int
   , baseTimeout :: Int }
 
+localAddr :: ServerConf i -> String
+localAddr c = "http://localhost:" <> show (ipfsPort c)
+
 confCLI :: IO (ServerConf String)
 confCLI = execParser $
   let parser = ServerConf
@@ -70,17 +73,17 @@ experimentNode conf = do
   let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
   runSettings sets 
               (cmdGetter (serverId conf) 
-                         (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) lastv resultsv) 
+                         (startExp (serverId conf) (localAddr conf) (baseTimeout conf) lastv resultsv) 
                          (resultsExp resultsv))
 
 startExp :: String -- ^ Node name
-         -> Int -- ^ Port
+         -> String -- ^ IPFS API address
          -> Int -- ^ Base timeout (microseconds)
          -> TVar (Maybe Int)
          -> TVar (Map Int ExpResult) 
          -> (ExpConf, NetConf String) 
          -> IO (Maybe Int)
-startExp i ipfsPort tsize lastv resultsv (ec,nc) = do
+startExp i ipfsAddr tsize lastv resultsv (ec,nc) = do
   mcurrent <- atomically (readTVar lastv) >>= \case
     Nothing -> return (Just 0)
     Just last -> (Map.lookup last <$> readTVarIO resultsv) >>= \case
@@ -94,7 +97,7 @@ startExp i ipfsPort tsize lastv resultsv (ec,nc) = do
       atomically $ swapTVar lastv (Just current)
       -- Start the experiment
       forkIO $ do 
-        results <- runNode i (ipfsPort) nc settings (expScript ec)
+        results <- runNode i ipfsAddr nc settings (expScript ec)
         atomically $ modifyTVar resultsv (Map.insert current results)
         putStrLn $ "Finished experiment " ++ show current
       putStrLn $ "Started experiment " ++ show current

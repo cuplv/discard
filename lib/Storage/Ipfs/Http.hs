@@ -27,13 +27,13 @@ parse' p b = decodeWith json (parse p) b
 
 data IpfsHttp = IpfsHttp Manager String
 
--- | Create an IPFS HTTP API endpoint connection
-mkIpfsHttp :: String -- ^ Hostname or IP address
-           -> Int -- ^ Port
+-- | Create an IPFS HTTP API endpoint connection from a URI 'String'
+-- (e.g. "http://localhost:5001")
+mkIpfsHttp :: String
            -> IO IpfsHttp
-mkIpfsHttp addr port = IpfsHttp
+mkIpfsHttp addr = IpfsHttp
   <$> newManager defaultManagerSettings
-  <*> pure ("http://"++addr++ ":"++show port)
+  <*> pure addr
 
 putRespP = withObject "PutResponse" $ \v -> do
   hash <- v .: "Hash"
@@ -69,7 +69,7 @@ putBaz api = do foo <- put api (objData "foo")
                 bar <- put api (objData "bar")
                 put api (objData "baz" <> objLink "l1" foo <> objLink "l2" bar)
 
-testy = do api <- mkIpfsHttp "localhost" 5001
+testy = do api <- mkIpfsHttp "http://localhost:5001"
            baz <- putBaz api
            quux <- put api (objData "quux" <> objLink "baznode" baz)
            Prelude.putStrLn "Refs of baz:"

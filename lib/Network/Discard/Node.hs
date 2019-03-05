@@ -50,19 +50,19 @@ type Script r c i s a =
 -- sure the initial store value matches the initial store history!
 runNode' :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
          => i  -- ^ Name
-         -> Int -- ^ IPFS Port
+         -> String -- ^ IPFS API URI
          -> NetConf i -- ^ Replica network
          -> s -- ^ Initial store value
          -> Store c i s -- ^ Initial store (locks + history
          -> DManagerSettings c i s
          -> Script (IpfsEG i) c i s a -- ^ Actions to perform
          -> IO (a, (s, Store c i s))
-runNode' i ipfsPort net val0 store0 dmsets script = do
+runNode' i ipfsAddr net val0 store0 dmsets script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
   let (otherIds,otherLocs) = unzip (others i net)
-  ipfsr <- mkIpfsEG "localhost" ipfsPort i
+  ipfsr <- mkIpfsEG ipfsAddr i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
   man <- initManager i otherIds otherDests ipfsr val0 store0 dmsets
@@ -81,13 +81,13 @@ runNode' i ipfsPort net val0 store0 dmsets script = do
 -- network.
 runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
         => i -- ^ name
-        -> Int -- ^ IPFS Port
+        -> String -- ^ IPFS API URI
         -> NetConf i -- ^ Replica network
         -> DManagerSettings c i s
         -> Script (IpfsEG i) c i s a
         -> IO a
-runNode i ipfsPort net dmsets script = 
-  fst <$> runNode' i ipfsPort net val0 store0 dmsets script
+runNode i ipfsAddr net dmsets script = 
+  fst <$> runNode' i ipfsAddr net val0 store0 dmsets script
   where val0 = baseStoreValue dmsets
         store0 = (mempty, Data.EventGraph.empty)
 
@@ -96,13 +96,13 @@ runNode i ipfsPort net dmsets script =
 -- it if it does not exist).
 runNodeFile :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i), FromJSON s, ToJSON s)
             => i -- ^ Name
-            -> Int -- ^ IPFS Port
+            -> String -- ^ IPFS API address
             -> NetConf i -- ^ Replica network
             -> FilePath -- ^ Save-file path
             -> DManagerSettings c i s
             -> Script (IpfsEG i) c i s a -- ^ Actions to perform
             -> IO a
-runNodeFile i ipfsPort net sfile dmsets script = do
+runNodeFile i ipfsAddr net sfile dmsets script = do
   let trypfile = doesFileExist sfile
   (val0,store0) <- doesFileExist sfile >>= \case
     True -> decodeFileEither sfile >>= \case
@@ -110,7 +110,7 @@ runNodeFile i ipfsPort net sfile dmsets script = do
       Left e -> do print e
                    die $ "Safe file \"" <> sfile <> "\" exists but is unreadable."
     False -> return (baseStoreValue dmsets, (mempty,Data.EventGraph.empty))
-  (a,stateFinal) <- runNode' i ipfsPort net val0 store0 dmsets script
+  (a,stateFinal) <- runNode' i ipfsAddr net val0 store0 dmsets script
   encodeFile sfile stateFinal
   return a
 

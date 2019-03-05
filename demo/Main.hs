@@ -40,6 +40,9 @@ data ConfCLI = ConfCLI
   , pFile :: Maybe FilePath
   , isOneshot :: Bool }
 
+localAddr :: ConfCLI -> String
+localAddr c = "http://localhost:" <> show (ipfsPort c)
+
 optionm p os = (Just <$> option p os) <|> pure Nothing
 
 confCLI :: IO ConfCLI
@@ -79,9 +82,9 @@ node = do
 
   let runNode' settings script = case pFile conf of
         Just sfile -> 
-          runNodeFile (nodeName conf) (ipfsPort conf) net sfile settings script
+          runNodeFile (nodeName conf) (localAddr conf) net sfile settings script
         Nothing -> do
-          runNode (nodeName conf) (ipfsPort conf) net settings script
+          runNode (nodeName conf) (localAddr conf) net settings script
 
   if isOneshot conf
 
