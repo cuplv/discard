@@ -4,6 +4,7 @@
 module Storage.Ipfs.Http 
   ( IpfsHttp
   , mkIpfsHttp
+  , setDebugLevel
   , put
   , get
   , refs
@@ -20,12 +21,16 @@ import Data.Aeson
 import Data.Aeson.Parser (decodeWith)
 import Data.Aeson.Types (parse)
 import Control.Monad
+import System.IO (hFlush,stdout)
 
 import Storage.Ipfs.Types
 
 parse' p b = decodeWith json (parse p) b
 
-data IpfsHttp = IpfsHttp Manager String
+data IpfsHttp = IpfsHttp 
+  { ipfsHttpManager :: Manager
+  , ipfsHttpApi :: String
+  , ipfsHttpDebug :: Int }
 
 -- | Create an IPFS HTTP API endpoint connection from a URI 'String'
 -- (e.g. "http://localhost:5001")
@@ -34,6 +39,23 @@ mkIpfsHttp :: String
 mkIpfsHttp addr = IpfsHttp
   <$> newManager defaultManagerSettings
   <*> pure addr
+  <*> pure 0
+
+-- | Set how much information about each HTTP request is printed to
+-- the console.  Default level is @0@, meaning print nothing.  Level
+-- @1@ announces the start and end of each request, and level @2@
+-- additionally prints the contents of requests.
+setDebugLevel :: Int -> IpfsHttp -> IpfsHttp
+setDebugLevel dbl (IpfsHttp m a _) = IpfsHttp m a dbl
+
+dbg :: Int -> Int -> String -> IO ()
+dbg t d s = if d >= t
+               then putStrLn s >> hFlush stdout
+               else return ()
+
+dbgH = dbg 2
+
+dbgL = dbg 1
 
 putRespP = withObject "PutResponse" $ \v -> do
   hash <- v .: "Hash"
@@ -49,20 +71,26 @@ putRespP = withObject "PutResponse" $ \v -> do
 -- >             bar <- put api (objData "bar")
 -- >             put api (objData "baz" <> objLink "l1" foo <> objLink "l2" bar)
 put :: IpfsHttp -> IpfsObject -> IO IpfsPath
-put (IpfsHttp man host) obj = do
+put (IpfsHttp man host dbl) obj = do
   initReq <- parseRequest (host++ "/api/v0/object/put")
   fullReq <- formDataBody [partLBS "file" (encode obj)] initReq
-  resp <- (parse' putRespP) . responseBody <$> httpLbs fullReq man
-  case resp of
-    Just path -> return path
+  dbgL dbl "Starting IPFS HTTP put..."
+  dbgH dbl (show obj)
+  Just path <- (parse' putRespP) . responseBody <$> httpLbs fullReq man
+  dbgH dbl (show path)
+  dbgL dbl "Finished IPFS HTTP put."
+  return path
 
 -- | Get an IPFS object
 get :: IpfsHttp -> IpfsPath -> IO IpfsObject
-get (IpfsHttp man host) (IpfsPath hash) = do
+get (IpfsHttp man host dbl) (IpfsPath hash) = do
   fullReq <- parseRequest (host++"/api/v0/object/get?arg="++Text.unpack hash)
-  resp <- decode . responseBody <$> httpLbs fullReq man
-  case resp of
-    Just obj -> return obj
+  dbgL dbl "Starting IPFS HTTP get..."
+  dbgH dbl (show hash)
+  Just obj <- decode . responseBody <$> httpLbs fullReq man
+  dbgH dbl (show obj)
+  dbgL dbl "Finished IPFS HTTP get."
+  return obj
 
 putBaz :: IpfsHttp -> IO IpfsPath
 putBaz api = do foo <- put api (objData "foo")
@@ -91,12 +119,23 @@ refs :: IpfsHttp
      -> Bool -- ^ Recursive?
      -> IpfsPath -- ^ Root
      -> IO [IpfsPath]
-refs (IpfsHttp man host) recursive (IpfsPath hash) = do
+refs (IpfsHttp man host dbl) recursive (IpfsPath hash) = do
   let rb = if recursive
               then "true"
               else "false"
-  fullReq <- parseRequest (host ++ "/api/v0/refs?arg="++Text.unpack hash ++ "&recursive=" ++rb)
-  rs <- map BL.fromStrict . C.lines . BL.toStrict . responseBody <$> httpLbs fullReq man
+  fullReq <- parseRequest (host 
+                           ++ "/api/v0/refs?arg=" 
+                           ++ Text.unpack hash 
+                           ++ "&recursive=" 
+                           ++ rb)
+  dbgL dbl "Starting IPFS HTTP refs..."
+  dbgH dbl (show hash)
+  rs <- map BL.fromStrict 
+        . C.lines 
+        . BL.toStrict 
+        . responseBody 
+        <$> httpLbs fullReq man
+  dbgL dbl "Finished IPFS HTTP refs."
   let p vs b = case (parse' refsRespP b) of
                  Just v -> Just (v:vs)
                  Nothing -> Nothing

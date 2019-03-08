@@ -36,7 +36,7 @@ import Data.EventGraph (Edge,empty)
 
 import Network.Discard.Broadcast
 import Network.Discard.RepCard
-import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG)
+import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG'')
 
 -- | A program to run on a replica node, which has access to the
 -- state-management thread via the 'ManagerConn' in order to execute
@@ -62,7 +62,7 @@ runNode' i ipfsAddr net val0 store0 dmsets script = do
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
   let (otherIds,otherLocs) = unzip (others i net)
-  ipfsr <- mkIpfsEG ipfsAddr i
+  ipfsr <- mkIpfsEG'' ipfsAddr i (dmsDebugLevel dmsets)
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
   man <- initManager i otherIds otherDests ipfsr val0 store0 dmsets

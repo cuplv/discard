@@ -88,7 +88,8 @@ node = do
 
   if isOneshot conf
 
-     then do (settings, await) <- awaitNetwork defaultDManagerSettings (Just 1000000)
+     then do let settings0 = defaultDManagerSettings
+             (settings, await) <- awaitNetwork settings0 (Just 1000000)
              let script i man = do
                    await >>= \case
                      False -> putStrLn "Network timeout. Continuing in offline mode..."

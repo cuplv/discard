@@ -10,6 +10,7 @@ module Data.EventGraph.Ipfs
   ( IpfsEG
   , mkIpfsEG
   , mkIpfsEG'
+  , mkIpfsEG''
   ) where
 
 import System.Exit (die)
@@ -80,6 +81,12 @@ mkIpfsEG :: String -- ^ URI (such as "http://localhost:5001")
          -> i -- ^ Replica ID
          -> IO (IpfsEG i)
 mkIpfsEG uri i = IpfsEG <$> mkIpfsHttp uri <*> pure i
+
+mkIpfsEG'' :: String -- ^ URI (such as "http://localhost:5001")
+           -> i -- ^ Replica ID
+           -> Int -- ^ Debug level
+           -> IO (IpfsEG i)
+mkIpfsEG'' uri i dbl = IpfsEG <$> (setDebugLevel dbl <$> mkIpfsHttp uri) <*> pure i
 
 -- | Resolver using the default port (5001) on "localhost"
 mkIpfsEG' :: i -> IO (IpfsEG i)

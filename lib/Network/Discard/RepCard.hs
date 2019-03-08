@@ -184,7 +184,8 @@ data DManagerSettings c i s = DManagerSettings
   , onValUpdate :: s -> IO ()
   , onLockUpdate :: Locks i s -> IO ()
   , onGetBroadcast :: IO ()
-  , baseStoreValue :: s }
+  , baseStoreValue :: s
+  , dmsDebugLevel :: Int }
 
 -- | Default settings using 'mempty' for the base store value.
 defaultDManagerSettings :: (Monoid s) => DManagerSettings c i s
@@ -199,7 +200,8 @@ defaultDManagerSettings' s = DManagerSettings
   , onValUpdate = const $ return ()
   , onLockUpdate = const $ return ()
   , onGetBroadcast = return ()
-  , baseStoreValue = s }
+  , baseStoreValue = s
+  , dmsDebugLevel = 0 }
 
 -- | A tag to tell awaitNetwork whether it is continuing in online (a
 -- first message was recieved) or offline (the timeout was reached)
@@ -244,7 +246,7 @@ initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Re
             -> Store c i s -- ^ Initial history + locks
             -> DManagerSettings c i s
             -> IO (ManagerConn c i s)
-initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase) = do
+initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO (val0,store0)
