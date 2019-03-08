@@ -130,7 +130,8 @@ data Manager c i s = Manager
   , grantMultiplex :: Int
   , batcheff :: [Effect s]
   , batchSize :: Int
-  , onGetBroadcastCb :: IO () }
+  , onGetBroadcastCb :: IO ()
+  , manDebugLevel :: Int }
 
 type ManM r c i s k = StateT (Manager c i s) (CvRepCmd r (Store c i s) k IO)
 
@@ -265,6 +266,7 @@ initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLo
         []
         bsize
         msgCb
+        dbl
       onUp = upWithSumms latestState upCb upCbVal upCbLocks r valBase
   ti <- forkIO $ do
           runCvRep
@@ -273,7 +275,9 @@ initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLo
             (Map.fromList [(store0^.hist,val0)])
             bc
             onUp 
-            (runStateT (doHellos ds msgCb >> managerLoop) manager)
+            (runStateT (doHellos ds msgCb 
+                        >> dbg 1 "Starting loop..." 
+                        >> managerLoop) manager)
           return ()
   return $ ManagerConn eventQueue latestState ti
 
@@ -289,24 +293,35 @@ doHellos ds cbB = do
     _ -> liftIO cbB
   lift bcast
 
+dbg :: (ManC r c i s k) => Int -> String -> ManM r c i s k ()
+dbg d s = do man <- get
+             if manDebugLevel man >= d
+                then liftIO $ putStrLn s >> hFlush stdout
+                else return ()
+
 managerLoop :: (ManC r c i s k) => ManM r c i s k ()
 managerLoop = do
   -- Handle latest event (incorp update or enque job)
   -- liftIO $ putStrLn "Handle latest..."
+  dbg 1 "Loop Phase: handleLatest"
   handleLatest
   -- Put jobs ready for retry back in the job queue
   -- liftIO $ putStrLn "Resurrect fails..."
+  dbg 1 "Loop Phase: resurrectFails"
   resurrectFails
   -- Work on current job or start next one, taking first from the
   -- waiting area.  New jobs that need requests have the request made
   -- and go to the waiting area.
   -- liftIO $ putStrLn "Work..."
+  dbg 1 "Loop Phase: workOnJob"
   workOnJob
   -- Enque locking requests from other replicas
   -- liftIO $ putStrLn "Handle lock reqs..."
+  dbg 1 "Loop Phase: handleLockReqs"
   handleLockReqs
   -- And grant them at the appropriate rate
   -- liftIO $ putStrLn "Grant lock reqs..."
+  dbg 1 "Loop Phase: grantLockReqs"
   grantLockReqs
   -- And loop
   managerLoop
@@ -334,18 +349,20 @@ handleLatest = do
                 <|> (ManNew <$> readTQueue (manInbox man)) 
   lstm updates >>= \case
     ManNew (Right j) -> case j of
-      _ -> lstm $ writeTQueue (manJobQueue man) j
+      _ -> do dbg 1 "Received job."
+              lstm $ writeTQueue (manJobQueue man) j
     ManNew (Left (BCast s)) -> do
+      dbg 1 "Received broadcast."
       -- If the received broadcast contains new updates, rebroadcast it.
       lift (incorp s) >>= \case
-        Just _ -> lift bcast
+        Just _ -> lift bcast >> dbg 1 "Rebroadcast."
         Nothing -> return ()
       liftIO (onGetBroadcastCb man)
     ManNew (Left Hello) ->
       -- -- Respond to a 'Hello' by broadcasting the current state,
       -- -- bringing the new node up to date.
       -- lift bcast >> liftIO (onGetBroadcastCb man)
-      return ()
+      dbg 1 "Received hello."
     ManRate rci' -> do
       -- liftIO $ putStrLn "RateControl event."
       modify (\m -> m { manRCIndex = rci' })

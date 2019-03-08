@@ -36,6 +36,8 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad (foldM)
 import Data.Maybe (catMaybes)
+import System.IO (hFlush,stdout)
+import qualified Data.ByteString.Lazy.Char8 as BS
 
 -- | 'BCast' constructs a broadcast for whatever data is being
 -- carried, and 'Hello' constructs a simple "I'm new here"
@@ -56,7 +58,7 @@ class Carries t s where
   send :: Dest t -> BMsg s -> Res t ()
 
   -- | Asdf
-  listen :: Src t -> (BMsg s -> Res t (Bool, Maybe (BMsg s))) -> Res t ()
+  listen :: Int -> Src t -> (BMsg s -> Res t (Bool, Maybe (BMsg s))) -> Res t ()
   -- | Send a 'Hello' message
   hello :: Dest t -> Res t (Maybe (BMsg s))
 ---
@@ -69,11 +71,11 @@ instance Transport (TChan (BMsg s)) where
 instance Carries (TChan (BMsg s)) s where
   hello (OutChan chan) = writeTChan chan Hello >> return Nothing
   send (OutChan chan) msg = writeTChan chan msg
-  listen (InChan chan) handle = do
+  listen dbg (InChan chan) handle = do
     msg <- readTChan chan
     (cont,mresp) <- handle msg
     if cont
-       then listen (InChan chan) handle
+       then listen dbg (InChan chan) handle
        else return ()
 
 data HttpT
@@ -83,11 +85,18 @@ instance Transport HttpT where
   data Src HttpT = HttpSrc Port
   type Res HttpT = IO
 
+dbg d t s = if t <= d
+               then putStrLn s >> hFlush stdout
+               else return ()
+
 msgGetter :: (ToJSON (BMsg s), FromJSON (BMsg s)) 
-          => (BMsg s -> IO (Bool, Maybe (BMsg s))) 
+          => Int
+          -> (BMsg s -> IO (Bool, Maybe (BMsg s))) 
           -> Application
-msgGetter handle request respond = do
+msgGetter dbl handle request respond = do
+  dbg dbl 1 "Received HTTP message."
   body <- strictRequestBody request
+  dbg dbl 2 (BS.unpack body)
   -- Check for HELLO, otherwise parse as JSON
   (_,mresp) <- case body of
                  "HELLO" -> handle Hello
@@ -112,8 +121,8 @@ instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
           (\(Client.HttpExceptionRequest _ _) -> return ())
     -- putStr "SEND: " >> print (encode msg)
     return ()
-  listen (HttpSrc p) handle = do
-    runSettings (setHost "!6" . setPort p $ defaultSettings) (msgGetter handle)
+  listen dbl (HttpSrc p) handle = do
+    runSettings (setHost "!6" . setPort p $ defaultSettings) (msgGetter dbl handle)
 
 -- | A 'NetConf' associates a 'String' hostname and 'Int' port number
 -- to a set of 'i'-named replica nodes.

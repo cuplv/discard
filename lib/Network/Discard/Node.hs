@@ -66,7 +66,7 @@ runNode' i ipfsAddr net val0 store0 dmsets script = do
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
   man <- initManager i otherIds otherDests ipfsr val0 store0 dmsets
-  lt <- mkListener (mkSrc port) man
+  lt <- mkListener (dmsDebugLevel dmsets) (mkSrc port) man
   res <- script i man
   killThread lt
   stateFinal <- killManager man
@@ -115,11 +115,12 @@ runNodeFile i ipfsAddr net sfile dmsets script = do
   return a
 
 mkListener :: (Carries HttpT (Store c i s))
-           => Src HttpT 
+           => Int 
+           -> Src HttpT 
            -> ManagerConn c i s
            -> IO ThreadId
-mkListener src man = 
-  forkIO (listen src handle)
+mkListener dbl src man = 
+  forkIO (listen dbl src handle)
   where handle m = case m of
           Hello -> do s <- getLatestStore man
                       giveUpdate m man
