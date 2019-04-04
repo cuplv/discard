@@ -14,10 +14,19 @@ module Data.CARD.Store
 
 import Data.Map (Map,lookup)
 import Control.Lens
+import Crypto.Saltine
+import Crypto.Saltine.Core.Sign
 
 import Data.CvRDT
 import Data.CARD
 import Data.CARD.Locks
+
+-- | In this type, parameter @i@ is the store ID, @j@ is the replica
+-- ID, and @s@ is the CARD.  The pair @(i,s)@ is thus the complete
+-- store identity, in which @i@ is the /unique name/ (public key) and
+-- @s@ is both the /CARD declaration/ (by its type-identifying
+-- constructor) and the /initial store value/.
+type Root i s = (i,s)
 
 -- | A 'Hist' is a sequence of CARD effects each paired with an 'i'
 -- identifier naming the replica responsible for them.  The
