@@ -38,11 +38,9 @@ import Control.Lens
 
 class (Ord s, Monad m) => CvRDT r s m where
   cvmerge :: r -> s -> s -> m s
-  cvempty :: r -> m s
 
 instance (CvRDT r s1 m, CvRDT r s2 m) => CvRDT r (s1,s2) m where
   cvmerge r (s1,s2) (s3,s4) = (,) <$> cvmerge r s1 s3 <*> cvmerge r s2 s4
-  cvempty r = (,) <$> cvempty r <*> cvempty r
 
 data CvReplica r s k m = CvReplica
   { _cvrState :: s
@@ -69,12 +67,12 @@ runCvRep r s0 k0 bc ou cmd =
 
 -- | Run a replica with an empty initial state and no meta-state or
 -- update action
-runCvRep' :: (CvRDT r s m) 
+runCvRep' :: (CvRDT r s m, Monoid s) 
           => r -- ^ Resolver
           -> (s -> m ())  -- ^ Broadcast action
           -> CvRepCmd r s () m a -- ^ Command script
           -> m a
-runCvRep' r bc sc = do s0 <- cvempty r
+runCvRep' r bc sc = do s0 <- return mempty
                        runCvRep r s0 () bc (\_ _ -> return ()) sc
 
 -- | Broadcast the current state.

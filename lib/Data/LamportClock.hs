@@ -80,5 +80,3 @@ instance (Ord (LHist i r d), LHistM i r d m) => CvRDT r (LHist i r d) m where
     | otherwise = do (LHist c' e' t') <- cvmerge r (LHist (untick i1 c1) e1 t1) (LHist (untick i2 c2) e2 t2)
                      es <- putInOrder r (i1,d1) (i2,d2)
                      return (LHist (tick i1 . tick i2 $ c') (es ++ e') t')
-
-  cvempty _ = return $ LHist mempty [] Nothing

@@ -176,7 +176,6 @@ merge2 r g1@(Single _ g1' _) g2 =
 
 instance (EG r d m) => CvRDT r (Edge r d) m where
   cvmerge = merge2
-  cvempty _ = return empty
 
 setLast :: Set a -> Maybe (a, Set a)
 setLast xs = let (as,bs) = Set.splitAt (Set.size xs - 1) xs

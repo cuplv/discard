@@ -65,7 +65,6 @@ instance (Ord i, CARD s) => Monoid (Locks i s) where
 
 instance (Ord i, CARD s, Monad m) => CvRDT r (Locks i s) m where
   cvmerge _ s1 s2 = pure (s1 <> s2)
-  cvempty _ = pure mempty
 
 -- | Get the current request index for an identity
 reqIndex :: (Ord i, CARD s) => i -> Locks i s -> Int
