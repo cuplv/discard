@@ -18,6 +18,7 @@ library
                      , Data.CARD.Locks
                      , Data.CARD.Store
                      , Data.CvRDT
+                     , Data.LogStore
                      , Data.LamportClock
                      , Lang.Carol
                      , Lang.Carol.Internal

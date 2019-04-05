@@ -21,10 +21,10 @@ import Data.CvRDT
 import Data.CARD
 import Data.CARD.Locks
 
--- | In this type, parameter @i@ is the store ID, @j@ is the replica
--- ID, and @s@ is the CARD.  The pair @(i,s)@ is thus the complete
--- store identity, in which @i@ is the /unique name/ (public key) and
--- @s@ is both the /CARD declaration/ (by its type-identifying
+-- | In this type, parameter @i@ and @s@ is the CARD.  The pair of
+-- values of type @(i,s)@ is thus the complete store identity, in
+-- which the @i@ value is the /unique name/ (public key) and the @s@
+-- value is both the /CARD declaration/ (by its type-identifying
 -- constructor) and the /initial store value/.
 type Root i s = (i,s)
 
