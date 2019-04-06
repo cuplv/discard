@@ -12,18 +12,16 @@ import Data.LamportClock
 
 type VClock = LClock
 
-type Root i r = (i,d)
-
-type Entry i e = (i, VClock i, e)
+type Entry i e = (i,e)
 
 -- | A rooted sequence, possibly stored through a monadic backend.
 -- Here, @l@ is the log structure, @i@ is the store/replica identity
 -- type, @r@ is the root node type, @e@ is the entry node type, and
 -- @m@ is the backend monad.
 class LogStore l i r e m where
-  init :: Root i r -> m (l i r e)
+  init :: r -> m (l i r e)
   log :: i -> e -> l i r e -> m (l i r e)
-  unlog :: l i r e -> m (Either (Root i r) (Entry i e, l i r e))
+  unlog :: l i r e -> m (Either r (Entry i e, l i r e))
 
 -- newtype ListLog r e = ListLog (r, [e]) deriving (Show,Read,Eq,Ord)
 

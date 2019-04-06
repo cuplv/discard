@@ -24,6 +24,7 @@ library
                      , Lang.Carol.Internal
                      , Lang.Carol.Bank
                      , Network.Discard
+                     , Network.Discard.Crypto
                      , Network.Discard.Experiment
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle

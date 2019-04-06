@@ -14,8 +14,6 @@ module Data.CARD.Store
 
 import Data.Map (Map,lookup)
 import Control.Lens
-import Crypto.Saltine
-import Crypto.Saltine.Core.Sign
 
 import Data.CvRDT
 import Data.CARD
