@@ -26,6 +26,7 @@ library
                      , Network.Discard
                      , Network.Discard.Crypto
                      , Network.Discard.Experiment
+                     , Network.Discard.HTTP
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
