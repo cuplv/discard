@@ -9,14 +9,9 @@
 
 module Network.Discard.Broadcast 
   ( BMsg (..)
-  -- , msgGetter
-  -- , NetConf (..)
-  -- , others
-  -- , self
-  -- , defaultPort
-  -- , broadcast
-  -- , helloAll
-
+  , Phone (..)
+  , broadcast
+  , askStates
   ) where
 
 import Control.Exception (catch)
@@ -49,7 +44,17 @@ import qualified Data.ByteString.Lazy.Char8 as BS
 -- been sent by a replica that has just started up.  The included @s
 -- -> IO ()@ function is used to send a state directly to the
 -- requesting replica (not a broadcast).
-data BMsg s = BCast s (Bool -> IO ()) | SReq (s -> IO ()) deriving (Generic)
+data BMsg s = BCast s (Bool -> IO ()) | SReq (s -> IO ())
+
+data Phone s = Phone
+  { phoneSendAction :: s -> IO Bool
+  , phoneReqAction :: IO [s] }
+
+broadcast :: Phone s -> s -> IO Bool
+broadcast (Phone f _) = f
+
+askStates :: Phone s -> IO [s]
+askStates (Phone _ a) = a
 
 -- class Transport t where
 --   data Dest t

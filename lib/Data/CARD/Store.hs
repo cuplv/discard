@@ -19,13 +19,6 @@ import Data.CvRDT
 import Data.CARD
 import Data.CARD.Locks
 
--- | In this type, parameter @i@ and @s@ is the CARD.  The pair of
--- values of type @(i,s)@ is thus the complete store identity, in
--- which the @i@ value is the /unique name/ (public key) and the @s@
--- value is both the /CARD declaration/ (by its type-identifying
--- constructor) and the /initial store value/.
-type Root i s = (i,s)
-
 -- | A 'Hist' is a sequence of CARD effects each paired with an 'i'
 -- identifier naming the replica responsible for them.  The
 -- identifiers, combined with each effect's history, make each element

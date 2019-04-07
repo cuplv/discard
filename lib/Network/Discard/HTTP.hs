@@ -1,12 +1,16 @@
+{-# LANGUAGE DeriveGeneric #-}
+
 module Network.Discard.HTTP
   ( msgListener
   , requestState
   , sendState
-  
+  , Wai.Application
+
   ) where
 
 import Control.Concurrent.STM
 import Data.Aeson
+import GHC.Generics
 import qualified Network.HTTP.Client as Client
 import Network.HTTP.Types
 import qualified Network.Wai as Wai
@@ -14,6 +18,13 @@ import qualified Network.Wai.Handler.Warp as Warp
 
 import Network.Discard.Broadcast
 
+
+data WireMsg s = WBCast s | WSReq deriving (Generic)
+
+instance (ToJSON s) => ToJSON (WireMsg s) where
+  toEncoding = genericToEncoding defaultOptions
+
+instance (FromJSON s) => FromJSON (WireMsg s)
 
 -- | A WAI application that handles broadcast network messages.
 --
@@ -30,7 +41,7 @@ msgListener = undefined
 requestState :: (FromJSON s) => Client.Manager -> String -> IO (Maybe s)
 requestState = undefined
 
-sendState :: (ToJSON s) => Client.Manager -> String -> s -> IO ()
+sendState :: (ToJSON s) => Client.Manager -> String -> s -> IO Bool
 sendState = undefined
 
 -- msgGetter :: (ToJSON (BMsg s), FromJSON (BMsg s)) 
