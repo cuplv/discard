@@ -22,6 +22,7 @@ import Lens.Micro.Platform
 import Data.CARD
 import Lang.Carol
 import Lang.Carol.Bank
+import Network.Discard
 
 data CustomEvent = StoreUpdate Counter | GotMessage deriving Show
 
@@ -38,20 +39,27 @@ mkForm = newForm [ editTextField cfCommand CommandField (Just 1) ]
 
 type St e = (NetStat, Counter, Form CommandForm e Name)
 
-draw :: St e -> [Widget Name]
-draw (ns,(Counter b),f) = 
-  [C.vCenter $ C.hCenter form <=> C.hCenter store <=> C.hCenter status]
+draw :: (PK,FeedId) -> St e -> [Widget Name]
+draw (i,fid) (ns,(Counter b),f) = 
+  [C.vCenter (C.hCenter repInfo 
+              <=> C.hCenter feedInfo 
+              <=> C.hCenter form 
+              <=> C.hCenter store 
+              <=> C.hCenter status)]
   where form = renderForm f
         store = Brick.str $ "Balance: $" <> (show b)
         status = Brick.str $ "Network status: " <> (show ns)
+        feedInfo = Brick.str $ "Feed: " <> Text.unpack (hashEncode fid)
+        repInfo = Brick.str $ "Replica: " <> Text.unpack (pkEncode i)
 
 thd (_,_,a) = a
 
 app :: (CCarrier c Counter IO) 
-    => c
+    => (PK,FeedId)
+    -> c
     -> App (St CustomEvent) CustomEvent Name
-app cc = App 
-  { appDraw = draw
+app inf cc = App 
+  { appDraw = draw inf
   , appHandleEvent = \(ns,c,f) ev -> case ev of
       VtyEvent (V.EvResize {}) -> continue (ns,c,f)
       VtyEvent (V.EvKey V.KEsc []) -> halt (ns,c,f)
@@ -87,13 +95,13 @@ mkUpdateChan = do
   chan <- newBChan 100
   return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
 
-runUi :: (CCarrier c Counter IO) => Counter -> c -> BChan CustomEvent -> IO ()
-runUi s0 conn chan = do
+runUi :: (CCarrier c Counter IO) => (PK,FeedId) -> Counter -> c -> BChan CustomEvent -> IO ()
+runUi (i,fid) s0 conn chan = do
   let buildVty = do
         v <- V.mkVty =<< V.standardIOConfig
         V.setMode (V.outputIface v) V.Mouse True
         return v
       f = (Offline, s0, mkForm (CommandForm ""))
   vty0 <- buildVty
-  f' <- customMain vty0 buildVty (Just chan) (app conn) f
+  f' <- customMain vty0 buildVty (Just chan) (app (i,fid) conn) f
   return ()

@@ -187,7 +187,6 @@ data DManagerSettings c s = DManagerSettings
   , onValUpdate :: s -> IO ()
   , onLockUpdate :: Locks PK s -> IO ()
   , onGetBroadcast :: IO ()
-  , baseStoreValue :: s
   , dmsDebugLevel :: Int }
 
 -- | Default settings using 'mempty' for the base store value.
@@ -203,7 +202,6 @@ defaultDManagerSettings' s = DManagerSettings
   , onValUpdate = const $ return ()
   , onLockUpdate = const $ return ()
   , onGetBroadcast = return ()
-  , baseStoreValue = s
   , dmsDebugLevel = 0 }
 
 -- | A tag to tell awaitNetwork whether it is continuing in online (a
@@ -243,20 +241,21 @@ awaitNetwork dms timeout = do
 initManager :: (Ord s, ManC r c s ())
             => PK -- ^ This replica's ID
             -> [PK] -- ^ Other replicas' IDs
-            -> Phone (Store c PK s) -- ^ Communication interface
+            -> Phone (Feed c s) -- ^ Communication interface
             -> r -- ^ Event graph resolver 
             -> Feed c s -- ^ Initial feed (ID + store)
             -> DManagerSettings c s
             -> IO (ManagerConn c s)
-initManager i os phone r (fid@(FeedRoot _ val0),store0) (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl) = do
+initManager i os phone r (froot@(FeedRoot _ val0),store0) (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb dbl) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
-  latestState <- newTVarIO (val0,store0)
+  val1 <- evalHist r val0 (store0^.hist) mempty
+  latestState <- newTVarIO (val1,store0)
   rci <- newRCIndex (ms2s ts)
   let manager = Manager
         eventQueue
         i
-        fid
+        froot
         os
         jobQueue
         []
@@ -268,31 +267,18 @@ initManager i os phone r (fid@(FeedRoot _ val0),store0) (DManagerSettings ts bsi
         bsize
         msgCb
         dbl
-      onUp = upWithSumms latestState upCb upCbVal upCbLocks r valBase
+      onUp = upWithSumms latestState upCb upCbVal upCbLocks r val0
   ti <- forkIO $ do
           runCvRep
             r
             store0
-            (Map.fromList [(store0^.hist,val0)])
-            (\s -> broadcast phone s >> return ())
+            (Map.fromList [(store0^.hist,val1)])
+            (\s -> broadcast phone (froot,s) >> return ())
             onUp 
-            (runStateT (doHellos phone msgCb 
-                        >> dbg 1 "Starting loop..." 
+            (runStateT (dbg 1 "Starting loop..." 
                         >> managerLoop) manager)
           return ()
   return $ ManagerConn eventQueue latestState ti
-
-doHellos :: (ManC r c s k) 
-         => Phone (Store c PK s)
-         -> IO ()
-         -> ManM r c s k ()
-doHellos phone cbB = do
-  ups <- liftIO $ askStates phone
-  lift $ mapM_ incorp ups
-  case ups of
-    [] -> return ()
-    _ -> liftIO cbB
-  lift bcast
 
 dbg :: (ManC r c s k) => Int -> String -> ManM r c s k ()
 dbg d s = do man <- get

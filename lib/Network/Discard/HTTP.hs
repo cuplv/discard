@@ -3,7 +3,8 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Network.Discard.HTTP
-  ( msgListener
+  ( mkPhone
+  , msgListener
   , requestState
   , sendState
   , DeliverStatus (..)
@@ -14,6 +15,7 @@ module Network.Discard.HTTP
 import Control.Concurrent.STM
 import Control.Exception (catch)
 import Data.Aeson
+import Data.Maybe
 import GHC.Generics
 import qualified Network.HTTP.Client as Client
 import Network.HTTP.Types
@@ -21,6 +23,18 @@ import qualified Network.Wai as Wai
 
 import Network.Discard.Broadcast
 import Network.Discard.Crypto (PK,FeedId)
+
+mkPhone :: (ToJSON s, FromJSON s)
+        => s -- ^ Dummy feed value to set type
+        -> FeedId
+        -> [String] -- ^ List of remote addresses for broadcast
+        -> IO (Phone s)
+mkPhone s00 fid ds = do
+  man <- Client.newManager Client.defaultManagerSettings
+  let send s = anyReceived <$> mapM (sendState man fid s) ds
+      ask = catMaybes <$> mapM (requestState s00 man fid) ds
+  return $ Phone send ask
+
 
 data WireMsg s = WBCast s | WSReq deriving (Generic)
 
@@ -57,13 +71,14 @@ msgListener handle rebc request respond = do
 
 -- | Request the latest head of a feed by its ID.  The first @s@
 -- parameter simply decides the type, and is not used.
-requestState :: (ToJSON s, FromJSON s) => s -> Client.Manager -> String -> FeedId -> IO (Maybe s)
-requestState (_::s) man uri i = do
+requestState :: (ToJSON s, FromJSON s) => s -> Client.Manager -> FeedId -> String -> IO (Maybe s)
+requestState (_::s) man i uri = do
   reqInit <- Client.parseRequest uri
   let req = reqInit { Client.requestBody = 
                         Client.RequestBodyLBS $ encode (i, WSReq::WireMsg s) }
       sendRcv = do
         resp <- Client.httpLbs req man
+        print (Client.responseBody resp)
         return $ decode' (Client.responseBody resp)
   catch sendRcv (\(Client.HttpExceptionRequest _ _) -> return Nothing)
 
@@ -73,9 +88,12 @@ requestState (_::s) man uri i = do
 -- possibly because the target could not be reached.
 data DeliverStatus = Acked | Received | Failed deriving (Show,Read,Eq,Ord)
 
+anyReceived :: [DeliverStatus] -> Bool
+anyReceived ds = length (filter (/= Failed) ds) > 0
+
 -- | Send the current head of a feed.
-sendState :: (ToJSON s) => Client.Manager -> String -> FeedId -> s -> IO DeliverStatus
-sendState man uri i s = do
+sendState :: (ToJSON s) => Client.Manager -> FeedId -> s -> String -> IO DeliverStatus
+sendState man i s uri = do
   reqInit <- Client.parseRequest uri
   let req = reqInit { Client.requestBody = 
                         Client.RequestBodyLBS $ encode (i, WBCast s) }
