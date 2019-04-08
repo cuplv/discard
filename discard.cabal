@@ -24,15 +24,15 @@ library
                      , Lang.Carol.Internal
                      , Lang.Carol.Bank
                      , Network.Discard
-                     , Network.Discard.Crypto
                      , Network.Discard.Experiment
-                     , Network.Discard.HTTP
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
 
   other-modules:       Network.Discard.Node
                      , Network.Discard.Broadcast
+                     , Network.Discard.Crypto
+                     , Network.Discard.HTTP
                      , Network.Discard.RateControl
                      , Network.Discard.RepCard
 
@@ -60,6 +60,7 @@ library
                      , random
                      , time
                      , saltine
+                     , base16-bytestring
   hs-source-dirs:      lib
   default-language:    Haskell2010
 

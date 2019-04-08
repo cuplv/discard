@@ -122,7 +122,7 @@ finishJob (Working _ _) = Idle
 data Manager c s = Manager
   { manInbox :: TQueue (Either (BMsg (Feed c s)) (Job s IO ()))
   , manId :: PK
-  , manFeedId :: FeedId s
+  , manFeedRoot :: FeedRoot s
   , manOthers :: [PK]
   , manJobQueue :: TQueue (Job s IO ())
   , manWaitingRoom :: [(Conref s, s -> IO (Job s IO ()))]
@@ -248,7 +248,7 @@ initManager :: (Ord s, ManC r c s ())
             -> Feed c s -- ^ Initial feed (ID + store)
             -> DManagerSettings c s
             -> IO (ManagerConn c s)
-initManager i os phone r (fid@(FeedId _ val0),store0) (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl) = do
+initManager i os phone r (fid@(FeedRoot _ val0),store0) (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO (val0,store0)
@@ -360,7 +360,7 @@ handleLatest = do
       liftIO (onGetBroadcastCb man)
     ManNew (Left (SReq respond)) -> do
       s <- lift check
-      liftIO $ respond (manFeedId man,s)
+      liftIO $ respond (manFeedRoot man,s)
       dbg 1 "Responded to state request."
     ManRate rci' -> do
       modify (\m -> m { manRCIndex = rci' })
