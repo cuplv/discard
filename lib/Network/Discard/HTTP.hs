@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Network.Discard.HTTP
   ( msgListener
@@ -36,11 +37,26 @@ msgListener :: (ToJSON s, FromJSON s)
             => (BMsg s -> IO ()) -- ^ Handler action
             -> (s -> IO ()) -- ^ Rebroadcast action
             -> Wai.Application
-msgListener = undefined
+msgListener handle rebc request respond = do
+  body <- Wai.strictRequestBody request
+  case decode body of
+    Just (WBCast f) -> do 
+      let ack b = if b
+                     then rebc f
+                     else return ()
+      handle (BCast f ack)
+      respond $ Wai.responseLBS status200 [] ""
+    Just WSReq -> do
+      var <- newEmptyTMVarIO
+      let job = SReq (atomically . putTMVar var)
+      handle job
+      s <- atomically $ takeTMVar var
+      respond $ Wai.responseLBS status200 [] (encode s)
 
 requestState :: (FromJSON s) => Client.Manager -> String -> IO (Maybe s)
 requestState = undefined
 
+-- | Returns 'True' if acked
 sendState :: (ToJSON s) => Client.Manager -> String -> s -> IO Bool
 sendState = undefined
 
