@@ -99,7 +99,7 @@ class (EGB r, Monad m, Eq (Event r d), Ord (Event r d), Ord d) => EG r d m where
 
 -- | Create a new event, appending it to the event graph
 appendEG :: (EG r d m) => r -> d -> Edge r d -> m (Edge r d)
-appendEG r d g = Single d g <$> event r g d
+appendEG r d g = flattenEdge . Single d g <$> event r g d
 
 -- | Create a graph with a single event as its edge
 liftEvent :: (Ord (Event r d)) => Event r d -> Edge r d
