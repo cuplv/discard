@@ -149,6 +149,23 @@ checkBlock' EQV (Effect es) = case es of
 ------------------------------------------------------------------------
 -- Simple implementations
 
+instance (CARD a, CARD b) => CARD (a,b) where
+  data Ef (a,b) = OnFstEf (Ef a) | OnSndEf (Ef b)
+  defineEffect (a,b) e = case e of
+    OnFstEf e -> (defineEffect a e, b)
+    OnSndEf e -> (a, defineEffect b e)
+
+  data Cr (a,b) = OnFstCr (Cr a) | OnSndCr (Cr b)
+  defineConflict c e = case (c,e) of
+    (OnFstCr c1, OnFstEf e1) -> defineConflict c1 e1
+    (OnSndCr c2, OnSndEf e2) -> defineConflict c2 e2
+    _ -> False
+
+deriving instance (CARD a, CARD b) => Eq (Ef (a,b))
+deriving instance (CARD a, CARD b) => Eq (Cr (a,b))
+deriving instance (CARD a, CARD b) => Ord (Ef (a,b))
+deriving instance (CARD a, CARD b) => Ord (Cr (a,b))
+
 newtype Counter = Counter Int deriving (Show,Read,Eq,Ord,Generic)
 
 instance Semigroup Counter where
