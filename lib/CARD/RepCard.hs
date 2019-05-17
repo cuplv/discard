@@ -45,8 +45,6 @@ import CARD.RepCore
 import CARD.LQ
 import CARD.RateControl
 
-batchSize = 50 :: Int
-
 type CardState i r s = (Locks i s, Hist i r s)
 
 data Job s m a = 
@@ -133,7 +131,7 @@ data Manager i r s = Manager
   , manLatest :: TVar s
   , manRCIndex :: RCIndex i s (Job s IO ())
   , grantMultiplex :: Int
-  , batcher :: Effect s -> Bool
+  , bSize :: Int
   , batcheff :: [Effect s]
   , myTurn :: Bool
   , turnTimer :: Maybe (TVar Bool)
@@ -176,10 +174,10 @@ initManager :: (Ord s, ManC i r s () t)
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
             -> Int -- ^ Timeout unit size (microseconds)
-            -> (Effect s -> Bool) -- ^ Batching whitelist
+            -> Int -- ^ Batch size
             -> CoordMode s
             -> IO (ManagerConn i r s)
-initManager i os ds r s0 ts bw cmode = do
+initManager i os ds r s0 ts bsize cmode = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO s0
@@ -197,7 +195,7 @@ initManager i os ds r s0 ts bw cmode = do
         latestState
         rci
         0
-        bw
+        bsize
         []
         turn
         Nothing
@@ -402,9 +400,10 @@ sendBatch = do
 
 enbatch :: (ManC i r s k t) => Effect s -> ManM i r s k t ()
 enbatch e = do
+  bsize <- bSize <$> get
   beff' <- (e:) . batcheff <$> get
   modify $ \m -> m { batcheff = beff' }
-  if length beff' >= batchSize
+  if length beff' >= bsize
      then sendBatch
      else return ()
 

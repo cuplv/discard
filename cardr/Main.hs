@@ -66,5 +66,5 @@ node = do
           ["check","exact"] -> print =<< runLQR man (currentS)
           _ -> putStrLn "Try again."
         script i man
-  runNode (nodeName conf) (ipfsPort conf) net (Counter 0) 100000 (const False) CC script
+  runNode (nodeName conf) (ipfsPort conf) net (Counter 0) 100000 noBatch CC script
   return ()

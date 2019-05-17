@@ -27,17 +27,21 @@ type Script i r s a =
   -> ManagerConn i r s
   -> IO a
 
+noBatch = 1 :: Int
+
+defaultBatch = 50 :: Int
+
 runNode :: (Ord s, ManC i (IpfsEG i) s () HttpT) 
         => i  -- ^ Name
         -> Int -- ^ IPFS Port
         -> NetConf i -- ^ Replica network
         -> s -- ^ Initial store value
         -> Int -- ^ Timeout unit size (microseconds)
-        -> (Effect s -> Bool)
+        -> Int -- ^ Batch size
         -> CoordMode s
         -> Script i (IpfsEG i) s a -- ^ Actions to perform
         -> IO a
-runNode i ipfsPort net s0 n bcheck sigCon script = do
+runNode i ipfsPort net s0 n bsize sigCon script = do
   port <- case self i net of
             Just (_,port) -> return port
             Nothing -> die "Given node name is not in network configuration."
@@ -45,7 +49,7 @@ runNode i ipfsPort net s0 n bcheck sigCon script = do
   ipfsr <- mkIpfsEG "localhost" ipfsPort i
   httpMan <- mkMan
   otherDests <- mapM (mkDest httpMan) otherLocs
-  man <- initManager i otherIds otherDests ipfsr s0 n bcheck sigCon
+  man <- initManager i otherIds otherDests ipfsr s0 n bsize sigCon
   lt <- mkListener (mkSrc port) man
   res <- script i man
   killThread lt

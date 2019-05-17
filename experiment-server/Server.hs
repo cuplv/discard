@@ -70,12 +70,6 @@ experimentNode conf = do
                          (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) (useTP conf) lastv resultsv) 
                          (resultsExp resultsv))
 
-bcheck = \case
-  Add _ -> True
-  _ -> False
-
-bcheck' (Effect es) = and (map bcheck es)
-
 startExp :: String -- ^ Node name
          -> Int -- ^ Port
          -> Int -- ^ Base timeout (microseconds)
@@ -99,7 +93,7 @@ startExp i ipfsPort tsize useTP lastv resultsv (ec,nc) = do
       atomically $ swapTVar lastv (Just current)
       -- Start the experiment
       forkIO $ do 
-        results <- runNode i (ipfsPort) nc s0 tsize bcheck' cmode (expScript ec)
+        results <- runNode i (ipfsPort) nc s0 tsize defaultBatch cmode (expScript ec)
         atomically $ modifyTVar resultsv (Map.insert current results)
         putStrLn $ "Finished experiment " ++ show current
       putStrLn $ "Started experiment " ++ show current
@@ -115,12 +109,6 @@ bankProfile = \case
   "withdraw" -> withdraw 1 >> return ()
   "current" -> current >> return ()
   "currentS" -> currentS >> return ()
-
--- | For our experiments, we define infinity as 10 seconds.  (This
--- means that operations which are cut off by the end of the
--- experiment are assumed to have taken 10 seconds)
-infinity :: NominalDiffTime
-infinity = fromRational 10
 
 oneSec :: Int -- Microseconds
 oneSec = 1000000
