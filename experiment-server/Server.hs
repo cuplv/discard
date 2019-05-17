@@ -33,8 +33,7 @@ data ServerConf i = ServerConf
   { serverId :: i
   , serverPort :: Int
   , ipfsPort :: Int
-  , baseTimeout :: Int
-  , useTP :: Bool }
+  , baseTimeout :: Int }
 
 confCLI :: IO (ServerConf String)
 confCLI = execParser $
@@ -52,7 +51,6 @@ confCLI = execParser $
                          <> metavar "MICROSEC"
                          <> help "Base timeout interval (microseconds)"
                          <> value defaultBaseTimeout)
-        <*> switch (long "token-passing" <> help "use TP coordination technique")
 
       misc = (fullDesc <> progDesc "Run an experiment node")
   in info (parser <**> helper) misc
@@ -67,25 +65,24 @@ experimentNode conf = do
   let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
   runSettings sets 
               (cmdGetter (serverId conf) 
-                         (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) (useTP conf) lastv resultsv) 
+                         (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) lastv resultsv) 
                          (resultsExp resultsv))
 
 startExp :: String -- ^ Node name
          -> Int -- ^ Port
          -> Int -- ^ Base timeout (microseconds)
-         -> Bool -- ^ Use token-passing
          -> TVar (Maybe Int)
          -> TVar (Map Int ExpResult) 
          -> (ExpConf, NetConf String) 
          -> IO (Maybe Int)
-startExp i ipfsPort tsize useTP lastv resultsv (ec,nc) = do
+startExp i ipfsPort tsize lastv resultsv (ec,nc) = do
   mcurrent <- atomically (readTVar lastv) >>= \case
     Nothing -> return (Just 0)
     Just last -> (Map.lookup last <$> readTVarIO resultsv) >>= \case
       Nothing -> return Nothing
       Just _ -> return (Just (last + 1))
   let s0 = Counter 100000
-      cmode = if useTP
+      cmode = if expUseTP ec
                  then TP (cr LEQ)
                  else CC
   case mcurrent of
@@ -97,6 +94,9 @@ startExp i ipfsPort tsize useTP lastv resultsv (ec,nc) = do
         atomically $ modifyTVar resultsv (Map.insert current results)
         putStrLn $ "Finished experiment " ++ show current
       putStrLn $ "Started experiment " ++ show current
+      putStrLn $ "Mode: " ++ if expUseTP ec
+                               then "token-passing"
+                               else "congestion-control"
       putStrLn $ "Time: " ++ show (expTime ec) ++ " s"
       putStrLn $ "Rate: " ++ show (expRate ec) ++ " req/s"
   return mcurrent

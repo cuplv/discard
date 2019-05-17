@@ -36,7 +36,8 @@ data ExpConf = ExpConf
   { expRate :: Int
   , expApp :: String
   , expMix :: Mix
-  , expTime :: Int }
+  , expTime :: Int
+  , expUseTP :: Bool }
   deriving (Eq,Ord,Show,Generic)
 
 instance ToJSON ExpConf where
@@ -46,8 +47,8 @@ instance FromJSON ExpConf
 -- | Divide request rate by number of hosts, so that all hosts
 -- together will perform the original rate
 divRate :: ExpNetConf i -> ExpConf -> ExpConf
-divRate (ExpNetConf nc) (ExpConf r a m t) = 
-  ExpConf (r `div` Map.size nc) a m t
+divRate (ExpNetConf nc) (ExpConf r a m t b) = 
+  ExpConf (r `div` Map.size nc) a m t b
 
 data Mix = Mix [(Int,String)] String deriving (Eq,Ord,Show,Generic)
 

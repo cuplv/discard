@@ -33,14 +33,15 @@ main = do
     Right net -> return net
     Left _ -> die "Could not read net conf file"
   runExperiment 
-    (ExpConf (clientRate conf) "asdf" (uncurry Mix (clientMix conf)) (clientTime conf))
+    (ExpConf (clientRate conf) "asdf" (uncurry Mix (clientMix conf)) (clientTime conf) (useTP conf))
     net
 
 data ClientConf i = ClientConf
   { clientNetConf :: FilePath
   , clientMix :: ([(Int,String)],String)
   , clientRate :: Int
-  , clientTime :: Int }
+  , clientTime :: Int
+  , useTP :: Bool }
 
 confCLI :: IO (ClientConf String)
 confCLI = execParser $
@@ -49,6 +50,7 @@ confCLI = execParser $
         <*> option auto (long "mix")
         <*> option auto (long "rate" <> metavar "MICROSEC")
         <*> option auto (long "time" <> metavar "SEC")
+        <*> switch (long "token-passing" <> help "use TP coordination technique")
       misc = (fullDesc <> progDesc "Run an experiment")
   in info (parser <**> helper) misc
 

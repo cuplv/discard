@@ -205,7 +205,7 @@ initManager i os ds r s0 ts bsize cmode = do
           case cmode of
             TP _ | turn -> do putStrLn $ "My turn to start."
                               runCoreM ((),r) Map.empty ds onUp (runStateT (setTurnTimer >> managerLoop) manager)
-            CC -> runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
+            _ -> runCoreM ((),r) Map.empty ds onUp (runStateT managerLoop manager)
           -- if turn
           --    then do putStrLn $ "My turn to start."
           --            runCoreM ((),r) Map.empty ds onUp (runStateT (setTurnTimer >> managerLoop) manager)

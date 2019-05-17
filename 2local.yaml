@@ -1,7 +1,7 @@
 - name: alpha
-  port: 23001
-  expPort: 24001
+  port: 23031
+  expPort: 24031
 
 - name: beta
-  port: 23002
-  expPort: 24002
+  port: 23032
+  expPort: 24032
