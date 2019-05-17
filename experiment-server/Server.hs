@@ -62,7 +62,7 @@ experimentNode :: ServerConf String -> IO ()
 experimentNode conf = do
   lastv <- newTVarIO Nothing
   resultsv <- newTVarIO Map.empty
-  let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
+  let sets = setHost "*" . setPort (serverPort conf) $ defaultSettings
   runSettings sets 
               (cmdGetter (serverId conf) 
                          (startExp (serverId conf) (ipfsPort conf) (baseTimeout conf) lastv resultsv) 
