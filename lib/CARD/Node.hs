@@ -34,7 +34,7 @@ runNode :: (Ord s, ManC i (IpfsEG i) s () HttpT)
         -> s -- ^ Initial store value
         -> Int -- ^ Timeout unit size (microseconds)
         -> (Effect s -> Bool)
-        -> Conref s
+        -> CoordMode s
         -> Script i (IpfsEG i) s a -- ^ Actions to perform
         -> IO a
 runNode i ipfsPort net s0 n bcheck sigCon script = do
