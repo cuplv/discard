@@ -1,0 +1,3 @@
+dist/build/cardr-experiment-server/cardr-experiment-server -p 24031 -i alpha &
+dist/build/cardr-experiment-server/cardr-experiment-server -p 24032 -i beta &
+echo "Started servers in background on ports 24031 and 24032."
