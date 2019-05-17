@@ -88,7 +88,7 @@ instance (ToJSON (BMsg s), FromJSON (BMsg s)) => Carries HttpT s where
     -- putStr "SEND: " >> print (encode msg)
     return ()
   listen (HttpSrc p) handle = do
-    runSettings (setHost "!6" . setPort p $ defaultSettings) (msgGetter handle)
+    runSettings (setHost "*" . setPort p $ defaultSettings) (msgGetter handle)
 
 data NetConf i = NetConf (Map i (String, Int)) deriving (Show,Eq,Ord)
 
