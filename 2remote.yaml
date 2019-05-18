@@ -1,0 +1,9 @@
+- name: alpha
+  port: 23031
+  host: {IP address or hostname of first machine}
+  expPort: 24031
+
+- name: beta
+  port: 23032
+  host: {IP address or hostname of second machine}
+  expPort: 24032
