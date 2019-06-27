@@ -73,7 +73,7 @@ executable discard-demo
                      , random
                      , time
                      , directory
-                     , brick
+                     , brick >=0.47 && <0.48
                      , microlens-platform
                      , text
                      , vty

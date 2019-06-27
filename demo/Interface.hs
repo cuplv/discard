@@ -94,5 +94,6 @@ runUi s0 conn chan = do
         V.setMode (V.outputIface v) V.Mouse True
         return v
       f = (Offline, s0, mkForm (CommandForm ""))
-  f' <- customMain buildVty (Just chan) (app conn) f
+  vty0 <- buildVty
+  f' <- customMain vty0 buildVty (Just chan) (app conn) f
   return ()
