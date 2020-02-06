@@ -14,10 +14,9 @@ First, get the project.
 Next, build the project.  If you have the [`nix`](https://nixos.org)
 package manager, the process is simple:
 
-    $ nix-env -i cabal2nix cabal-install
-    $ cabal2nix --shell . > shell.nix
-    $ nix-shell --command "cabal configure"
-    $ cabal build
+    $ cabal2nix ./. > package.nix
+    $ nix-shell
+    [nix-shell]$ cabal configure/build/run etc.
 
 The current demo executable is a simple conflict-aware bank account,
 in which replicas announce updates via http and store their history in
@@ -45,24 +44,6 @@ language, are defined in [`Bank.hs`][3].
 
 Library documentation, which is still minimal and disorganized, can be
 compiled with `cabal haddock`.
-
-
-## Alternate setup ##
-
-If you don't have Nix, here's another way to set up the system (that
-hasn't been tested in a while...)
-
-1. [Install ipfs](https://docs.ipfs.io/introduction/install/)
-1. [Install stack](https://docs.haskellstack.org/en/stable/README/#how-to-install)
-1. Execute the following command within the repo:
-    ```
-    $ stack setup
-    ```
-1. To build and run the code, use the commands,
-    ```
-    $ stack build
-    $ stack exec cardr
-    ```
 
 [1]: https://gateway.ipfs.io/ipfs/Qmf1H4ZmWbwYk6sAaK6RzZe3KsuQbx11KvzX5jaFPwsx8w/carol-lang-2018-12-14.pdf
 [2]: ./demo/Main.hs
