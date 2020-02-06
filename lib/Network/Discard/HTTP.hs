@@ -25,14 +25,13 @@ import Network.Discard.Broadcast
 import Network.Discard.Crypto (PK,FeedId)
 
 mkPhone :: (ToJSON s, FromJSON s)
-        => s -- ^ Dummy feed value to set type
-        -> FeedId
+        => FeedId
         -> [String] -- ^ List of remote addresses for broadcast
         -> IO (Phone s)
-mkPhone s00 fid ds = do
+mkPhone fid ds = do
   man <- Client.newManager Client.defaultManagerSettings
   let send s = anyReceived <$> mapM (sendState man fid s) ds
-      ask = catMaybes <$> mapM (requestState s00 man fid) ds
+      ask = catMaybes <$> mapM (requestState man fid) ds
   return $ Phone send ask
 
 
@@ -71,8 +70,11 @@ msgListener handle rebc request respond = do
 
 -- | Request the latest head of a feed by its ID.  The first @s@
 -- parameter simply decides the type, and is not used.
-requestState :: (ToJSON s, FromJSON s) => s -> Client.Manager -> FeedId -> String -> IO (Maybe s)
-requestState (_::s) man i uri = do
+requestState :: forall s. (ToJSON s, FromJSON s) => Client.Manager -> FeedId -> String -> IO (Maybe s)
+-- The use of "forall s" in the sig allows the correct "encode" impl
+-- to be inferred in the request below, as made possible by
+-- ScopedTypeVariables.
+requestState man i uri = do
   reqInit <- Client.parseRequest uri
   let req = reqInit { Client.requestBody = 
                         Client.RequestBodyLBS $ encode (i, WSReq::WireMsg s) }

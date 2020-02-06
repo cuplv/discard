@@ -43,8 +43,6 @@ data ConfCLI = ConfCLI
   , pFile :: Maybe FilePath
   , followFeed :: Maybe Text }
 
--- data ConfigFile = undefined
-
 localAddr :: ConfCLI -> String
 localAddr c = "http://localhost:" <> show (ipfsPort c)
 
@@ -71,8 +69,6 @@ tryPFile fp = doesFileExist fp >>= \case
                  die $ "Save file \"" <> fp <> "\" exists but is unreadable."
   False -> return Nothing
 
-emptyInit = (Counter 0, Data.EventGraph.empty)
-
 node :: IO ()
 node = do
   conf <- confCLI
@@ -91,21 +87,13 @@ node = do
   putStrLn "Running gui"
   runUi (i,fid) initStore conn eventChan
 
-mkPhone' :: FeedId -> [String] -> IO (Phone (Feed (Edge (IpfsEG PK)) Counter))
-mkPhone' fid ds = do 
-  -- Annoyingly, we need a token feed value to set the type...
-  (r,_) <- createFeed (Counter 0)
-  let feed00 = (r,(mempty, Data.EventGraph.empty))
-  
-  mkPhone feed00 fid ds
-
 follow :: PK 
        -> ConfCLI 
        -> DManagerSettings (Edge (IpfsEG PK)) Counter 
        -> FeedId 
        -> IO (Maybe (ManagerConn (Edge (IpfsEG PK)) Counter))
 follow i conf sets fid = do
-  phone <- mkPhone' fid (remoteAddrs conf)
+  phone <- mkPhone fid (remoteAddrs conf)
   res <- mkIpfsEG (localAddr conf) i
   askStates phone >>= \case
     [] -> do putStrLn "Could not find specified feed at any replica."
@@ -129,49 +117,9 @@ runListener port fid conn = do
 mkNew :: PK -> ConfCLI -> DManagerSettings (Edge (IpfsEG PK)) Counter -> IO (FeedId, ManagerConn (Edge (IpfsEG PK)) Counter)
 mkNew i conf sets = do
   (r,_) <- createFeed (Counter 8)
-  p <- mkPhone' (feedId r) (remoteAddrs conf)
+  p <- mkPhone (feedId r) (remoteAddrs conf)
   res <- mkIpfsEG (localAddr conf) i
   let feed = (r,(mempty, Data.EventGraph.empty))
   conn <- initManager i [] p res feed sets
   runListener (listenPort conf) (feedId r) conn
   return (feedId r, conn)
-
--- node :: IO ()
--- node = do
---   conf <- confCLI
---   net <- decodeFileEither (confFile conf) >>= \case
---     Right net -> return net
---     Left exc -> print exc >> die "Could not read network configuration file"
-
---   let runNode' settings script = case pFile conf of
---         Just sfile -> 
---           runNodeFile (nodeName conf) (localAddr conf) net sfile settings script
---         Nothing -> do
---           runNode (nodeName conf) (localAddr conf) net settings script
-
---   if isOneshot conf
-
---      then do let settings0 = defaultDManagerSettings
---              (settings, await) <- awaitNetwork settings0 (Just 1000000)
---              let script i man = do
---                    await >>= \case
---                      False -> putStrLn "Network timeout. Continuing in offline mode..."
---                      _ -> return ()
---                    Counter s0 <- carol man queryT
---                    putStrLn $ "Starting balance: $" <> show s0 <> "."
---                    d <- carol man $ deposit 10
---                    case d of
---                      Right n -> putStrLn $ "Deposited $" <> show n <> "."
---                      Left e -> putStrLn e
---                    Counter s1 <- carol man $ queryT
---                    putStrLn $ "Ending balance: $" <> show s1 <> "."
---              runNode' settings script
-
---      else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
---              let script i man = do 
---                    initStore <- carol man $ queryT
---                    runUi initStore man eventChan
---                  settings = defaultDManagerSettings { onValUpdate = onUpdate
---                                                     , onGetBroadcast = onMessage }
---              runNode' settings script
-
