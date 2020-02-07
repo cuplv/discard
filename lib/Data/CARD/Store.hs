@@ -19,17 +19,21 @@ import Data.CvRDT
 import Data.CARD
 import Data.CARD.Locks
 
+-- | A list (containing at least 1) of effect options
+type OpEffect s = (Effect s,[Effect s])
+
 -- | A 'Hist' is a sequence of CARD effects each paired with an 'i'
 -- identifier naming the replica responsible for them.  The
 -- identifiers, combined with each effect's history, make each element
 -- of the sequence unique.
-type Hist c i s = c (i, Effect s)
+type Hist c i s = c (i, [OpEffect s])
 
 -- | Evaluate a 'Hist' according to the evaluation semantics defined
 -- for 's' 'Effect's.  A "summaries" 'Map' from history prefixes to
 -- store values can be provided as a shortcut.
 evalHist :: (CARD s, CvChain r c (i, Effect s) m) 
          => r -- ^ Resolver
+         -> Conref s -- ^ Conref to evaluate under
          -> s -- ^ Initial store value
          -> Hist c i s -- ^ History to evaluate
          -> Map (Hist c i s) s -- ^ Summaries

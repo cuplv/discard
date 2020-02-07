@@ -27,6 +27,7 @@ module Data.CARD
   , impl
   , checkBlock
   , checkBlock'
+  , checkOrder
   -- * Common instances
   , Counter (..)
   , RGArray (..)
@@ -38,6 +39,7 @@ import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.List as List
+import Data.Ord (Down (Down))
 import GHC.Generics
 import Data.Aeson
 
@@ -48,6 +50,11 @@ class (Eq (Ef s), Eq (Cr s), Ord (Ef s), Ord (Cr s)) => CARD s where
 
   data Cr s
   defineConflict :: Cr s -> Ef s -> Bool
+  
+  -- | Per-conref ordering on effects, which might be incomparable.
+  -- Given C, E1, and E2, finding that E1 <C= E2 means that Hist(E1)
+  -- <C= Hist(E2).
+  defineOrder :: Cr s -> Ef s -> Ef s -> Maybe Ordering
 
 newtype Effect s = Effect [Ef s] deriving (Generic)
 
@@ -146,6 +153,15 @@ checkBlock' EQV (Effect es) = case es of
                                 [] -> Right ()
                                 _ -> Left EQV
 
+-- | Compare two effects according to a 'Conref'.  For now, this
+-- comparison is considered impossible for combined 'Conref's and
+-- effects.
+checkOrder :: (CARD s) => Conref s -> Effect s -> Effect s -> Maybe Ordering
+checkOrder (Conref cs) (Effect [e1]) (Effect [e2]) = case Set.toList cs of
+  [c] -> defineOrder c e1 e2
+  _ -> Nothing
+checkOrder _ _ _ = Nothing
+
 ------------------------------------------------------------------------
 -- Simple implementations
 
@@ -186,6 +202,15 @@ instance CARD Counter where
     (GEQ,Add _) -> True
     (_,SetTo _) -> True
     _ -> False
+  defineOrder c e1 e2 = 
+    let asI (Add n) = Just n
+        asI (Sub n) = Just (-n)
+        asI (SetTo _) = Nothing
+    in case (c,asI e1,asI e2) of
+         _ | e1 == e2 -> Just EQ
+         (LEQ,Just n1,Just n2) -> Just $ compare n1 n2
+         (GEQ,Just n1,Just n2) -> Just $ compare (Down n1) (Down n2)
+         _ -> Nothing
 
 instance ToJSON Counter where
   toEncoding = genericToEncoding defaultOptions
