@@ -17,10 +17,12 @@ import Network.HTTP.Client.MultipartFormData
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Char8 as C
+import qualified Data.ByteString.Lazy.Char8 as CL
 import Data.Aeson
 import Data.Aeson.Parser (decodeWith)
 import Data.Aeson.Types (parse)
 import Control.Monad
+import System.Exit (die)
 import System.IO (hFlush,stdout)
 
 import Storage.Ipfs.Types
@@ -72,7 +74,7 @@ putRespP = withObject "PutResponse" $ \v -> do
 -- >             put api (objData "baz" <> objLink "l1" foo <> objLink "l2" bar)
 put :: IpfsHttp -> IpfsObject -> IO IpfsPath
 put (IpfsHttp man host dbl) obj = do
-  initReq <- parseRequest (host++ "/api/v0/object/put")
+  initReq <- parseRequest ("POST " ++ host ++ "/api/v0/object/put")
   fullReq <- formDataBody [partLBS "file" (encode obj)] initReq
   dbgL dbl "Starting IPFS HTTP put..."
   dbgH dbl (show obj)
@@ -84,10 +86,19 @@ put (IpfsHttp man host dbl) obj = do
 -- | Get an IPFS object
 get :: IpfsHttp -> IpfsPath -> IO IpfsObject
 get (IpfsHttp man host dbl) (IpfsPath hash) = do
-  fullReq <- parseRequest (host++"/api/v0/object/get?arg="++Text.unpack hash)
+  fullReq <- parseRequest 
+               ("POST " ++ host ++ "/api/v0/object/get?arg=" ++ Text.unpack hash)
   dbgL dbl "Starting IPFS HTTP get..."
   dbgH dbl (show hash)
-  Just obj <- decode . responseBody <$> httpLbs fullReq man
+  resp <- httpLbs fullReq man :: IO (Response BL.ByteString)
+  case statusCode . responseStatus $ resp of
+    200 -> return ()
+    c -> CL.putStrLn (responseBody resp)
+         >> die ("Error: Code " ++ show c ++ " from IPFS")
+  obj <- case decode (responseBody resp) of
+           Just obj -> return obj
+           Nothing -> CL.putStrLn (responseBody resp)
+                      >> die "Error: Could not decode IPFS response."
   dbgH dbl (show obj)
   dbgL dbl "Finished IPFS HTTP get."
   return obj
@@ -123,7 +134,8 @@ refs (IpfsHttp man host dbl) recursive (IpfsPath hash) = do
   let rb = if recursive
               then "true"
               else "false"
-  fullReq <- parseRequest (host 
+  fullReq <- parseRequest ("POST " 
+                           ++ host 
                            ++ "/api/v0/refs?arg=" 
                            ++ Text.unpack hash 
                            ++ "&recursive=" 
