@@ -33,7 +33,7 @@ library
                      , Network.Discard.RateControl
                      , Network.Discard.RepCard
 
-  build-depends:       base >=4.10 && <4.14
+  build-depends:       base >=4.10 && <4.15
                      , containers
                      , mtl
                      , stm
@@ -62,7 +62,7 @@ library
 executable discard-demo
   main-is:             Main.hs
   other-modules:        Interface
-  build-depends:       base >=4.10 && <4.14
+  build-depends:       base >=4.10 && <4.15
                      , discard
                      , mtl
                      , stm
@@ -73,7 +73,7 @@ executable discard-demo
                      , random
                      , time
                      , directory
-                     , brick >=0.47 && <0.53
+                     , brick >=0.47 && <0.59
                      , microlens-platform
                      , text
                      , vty
@@ -86,7 +86,7 @@ executable discard-demo
 
 executable discard-experiment-server
   main-is:             Server.hs
-  build-depends:       base >=4.10 && <4.14
+  build-depends:       base >=4.10 && <4.15
                      , discard
                      , mtl
                      , stm
@@ -110,7 +110,7 @@ executable discard-experiment-server
 
 executable discard-experiment-client
   main-is:             Client.hs
-  build-depends:       base >=4.10 && <4.14
+  build-depends:       base >=4.10 && <4.15
                      , discard
                      , mtl
                      , stm
