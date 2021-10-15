@@ -1,15 +1,41 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TemplateHaskell #-}
 
-module Data.CARD.Effect where
+module Data.CARD.Effect
+  (
+  -- * The effect domain class
+    EffectDom (..)
+  , idEffect
+  -- * Concrete effect domains
+  , ECounter
+  , addAmt
+  , mulAmt
+  , addE
+  , subE
+  , mulE
+  , additive
+  -- * Effect domain combinators
+  , EIdentity
+  , EConst (..)
+  , EOnFunctor (..)
+  , EProduct
+  , EProduct3
+  , EProduct4
+  ) where
+
+import Lens.Micro.TH
 
 -- The "mempty" of an effect domain's monoid instance should always
 -- represent the identity effect, such that runEffect mempty = id.
 class (Monoid e) => EffectDom e s where
   runEffect :: e -> s -> s
 
--- The identity effect.
+idEffect :: (Monoid e) => e
+idEffect = mempty
+
+-- The domain containing only the identity effect.
 type EIdentity = ()
 
 instance EffectDom () s where
@@ -82,19 +108,40 @@ instance
     , runEffect e3 s3
     , runEffect e4 s4 )
 
-data ECounter n = ECounter { _addAmt :: n, _mulAmt :: n }
+data ECounter n = ECounter { _mulAmt :: n, _addAmt :: n }
+
+makeLenses ''ECounter
 
 instance (Num n) => Semigroup (ECounter n) where
-  ECounter a1 m1 <> ECounter a2 m2 = ECounter (a1 + a2) (m1 + m2)
+  ECounter m1 a1 <> ECounter m2 a2 =
+    -- Distributing multiplication over addition.
+    ECounter (m1 + m2) (a1 * m2 + a2)
+
+mulId :: (Num n) => n
+mulId = 1
+
+addId :: (Num n) => n
+addId = 0
 
 instance (Num n) => Monoid (ECounter n) where
-  mempty = ECounter 0 1
+  mempty = ECounter mulId addId
 
-addE :: (Num n) => n -> ECounter n
-addE n = ECounter n 1
+instance (Num n) => EffectDom (ECounter n) n where
+  runEffect (ECounter m a) s = s * m + a
 
-subE :: (Num n) => n -> ECounter n
-subE n = ECounter (-n) 1
+-- | An ECounter effect that adds.  Only accepts arguments >= 0.
+addE :: (Ord n, Num n) => n -> ECounter n
+addE n | n >= 0 = ECounter mulId n
 
-mulE :: (Num n) => n -> ECounter n
-mulE n = ECounter 0 n
+-- | An ECounter effect that subtracts.  Only accepts arguments >= 0.
+subE :: (Ord n, Num n) => n -> ECounter n
+subE n | n >= 0 = ECounter mulId (-n)
+
+-- | An ECounter effect that multiplies.  Only accepts arguments >= 0.
+mulE :: (Ord n, Num n) => n -> ECounter n
+mulE n | n >= 0 = ECounter n addId
+
+-- | Check that an ECounter effect only adds/subtracts, and does not
+-- multiply.
+additive :: (Eq n, Num n) => ECounter n -> Bool
+additive (ECounter m _) = m == mulId

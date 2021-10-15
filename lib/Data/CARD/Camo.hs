@@ -4,17 +4,25 @@
 
 module Data.CARD.Camo where
 
+import Lens.Micro
+
 import Data.CARD.Effect
 
 data Wrt c = Wrt
 
 class StateOrd c s where
-  -- Preorder on states.  This is only used in a few situations for
-  -- optimizations, so if you don't want to define it, you are safe
+  -- Preorder on states.  This is used in certain situations for
+  -- optimizations, but if you don't want to define it, you are safe
   -- leaving it with its default implementation, by which no states
   -- are ordered.
   stateLe :: c -> s -> s -> Bool
   stateLe _ _ _ = False
+
+  -- Check whether a state is a "top" element according to the given
+  -- order, meaning that it is greater than or equal to all elements.
+  -- Since this is a preorder, there may be multiple top elements.
+  stateTop :: c -> s -> Bool
+  stateTop _ _ = False
 
 class EffectOrd c e where
   -- Preorder on effects.
@@ -32,13 +40,21 @@ class EffectOrd c e where
   effectMerge :: Wrt c -> e -> e -> Maybe e
   effectMerge _ _ _ = Nothing
 
-class (StateOrd c s, EffectOrd c e) => CamoDom c e s
+class (EffectDom e s, StateOrd c s, EffectOrd c e) => CamoDom c e s
 
 -- Possibly the "downgrade" function should be provided by the Camo
 -- implementation, since it involves both the state (a test on a
 -- state) and also the effects (a reduced set of blocked effects).
 -- Unless it makes sense to state the reduced set of blocked effects
 -- as a Camo instead?
+
+instance (StateOrd c s, EffectOrd c e) => EffectOrd c (EConst e s) where
+  effectLe c (EConst s1) (EConst s2) = stateLe c s1 s2
+  effectLe c _ (EConst s) = stateTop c s
+  effectLe c (EModify e1) (EModify e2) = effectLe c e1 e2
+
+instance (EffectDom e s, StateOrd c s, EffectOrd c e)
+  => CamoDom c (EConst e s) s
 
 -- The identity relation (or "EQV"), providing an exact snapshot.
 type CIdentity = ()
@@ -82,8 +98,13 @@ data CCounter
   | CNotPositive
 
 instance (Num n, Ord n) => StateOrd CCounter n where
-  stateLe = \case
-    CLowerBound -> (<=)
-    CUpperBound -> (>=)
-    CNotNegative -> \x s -> (s >= 0) || not (x >= 0)
-    CNotPositive -> \x s -> (s <= 0) || not (x <= 0)
+  stateLe CLowerBound = (<=)
+  stateLe CUpperBound = (>=)
+
+instance (Num n, Ord n) => EffectOrd CCounter (ECounter n) where
+  effectLe c e1 e2 =
+    additive e1
+    && additive e2
+    && stateLe c (e1^.addAmt) (e2^.addAmt)
+
+instance (Num n, Ord n) => CamoDom CCounter (ECounter n) n

@@ -43,6 +43,8 @@ library
                      , mtl
                      , stm
                      , lens
+                     , microlens
+                     , microlens-th
                      , turtle
                      , foldl
                      , text
