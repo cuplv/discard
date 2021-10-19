@@ -1,9 +1,12 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 
 module Data.CARD.Camo where
 
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Lens.Micro
 
 import Data.CARD.Effect
@@ -108,3 +111,15 @@ instance (Num n, Ord n) => EffectOrd CCounter (ECounter n) where
     && stateLe c (e1^.addAmt) (e2^.addAmt)
 
 instance (Num n, Ord n) => CamoDom CCounter (ECounter n) n
+
+data CMaybe e s
+
+data CMap k c = CMap k c
+
+instance (Ord k, StateOrd c (Maybe v)) => StateOrd (CMap k c) (Map k v) where
+  stateLe (CMap k c) s1 s2 = stateLe c (Map.lookup k s1) (Map.lookup k s2)
+
+instance
+  (Ord k, EffectDom e v, EffectOrd c (EMaybe e v))
+  => EffectOrd (CMap k c) (EMap k e v) where
+  effectLe (CMap k c) e1 e2 = effectLe c (fromKeyE k e1) (fromKeyE k e2)
