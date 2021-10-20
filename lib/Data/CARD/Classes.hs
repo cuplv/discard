@@ -14,6 +14,7 @@ module Data.CARD.Classes
   , uniC
   , idC
   , UniversalC (..)
+  , Wrt (..)
   ) where
 
 import Data.Aeson
@@ -136,8 +137,10 @@ instance (Absorbing a1, Absorbing a2, Absorbing a3, Absorbing a4, Absorbing a5) 
 instance (Absorbing a) => Absorbing (Maybe a) where
   absorb = Just absorb
 
-data Wrt c = Wrt
+impl :: (Eq a, Semigroup a) => a -> a -> Bool
+impl a b = a <> b == a
 
+data Wrt c = Wrt
 
 class StateOrd c s where
   -- Preorder on states.  This is used in certain situations for

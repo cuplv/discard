@@ -24,14 +24,14 @@ import Data.CARD
 
 assert :: Bool -- ^ Assert condition
        -> String -- ^ Failure message
-       -> Carol s (Either String a) -- ^ Remaining term
-       -> Carol s (Either String a)
+       -> Carol c e s (Either String a) -- ^ Remaining term
+       -> Carol c e s (Either String a)
 assert b s op = if b
                    then op
                    else return (Left s)
 
 -- | When store val is below given value, perform the given operation.
-whenBelow :: (CARD s, Ord s) => s -> Carol s a -> Carol s (Maybe a)
+whenBelow :: (Monoid c, Ord s) => s -> Carol c e s a -> Carol c e s (Maybe a)
 whenBelow t op = do
   s <- queryT
   if s < t

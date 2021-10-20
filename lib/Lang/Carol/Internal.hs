@@ -39,149 +39,150 @@ import Control.Monad.State
 
 import Data.CARD
 
-data CarolNode s a =
-    Issue (Effect s) a
-  | Query (Conref s) (s -> a)
-  | Consume (Effect s) (Maybe (Effect s) -> a)
-  | Produce (Effect s) a
+data CarolNode c e s a =
+    Issue e a
+  | Query c (s -> a)
+  | Consume e (Maybe e -> a)
+  | Produce e a
 
-instance Functor (CarolNode s) where
+instance Functor (CarolNode c e s) where
   fmap f m = case m of
     Issue e a -> Issue e (f a)
     Query c a -> Query c (\s -> f (a s))
     Consume e a -> Consume e (\m -> f (a m))
     Produce e a -> Produce e (f a)
 
-type Carol s = Free (CarolNode s)
+type Carol c e s = Free (CarolNode c e s)
 
-data Update s = Update
-  { uIssued :: Effect s
-  , uProduced :: Effect s
-  , uConsumed :: Effect s }
+data Update e = Update
+  { uIssued :: e
+  , uProduced :: e
+  , uConsumed :: e }
 
-instance Semigroup (Update s) where
+instance (Semigroup e) => Semigroup (Update e) where
   Update i1 p1 c1 <> Update i2 p2 c2 = 
-    Update (i1 |>>| i2) (p1 |>>| p2) (c1 |>>| c2)
+    Update (i2 <> i1) (p2 <> p1) (c2 <> c1)
 
-instance Monoid (Update s) where
-  mempty = Update ef0 ef0 ef0
+instance (Monoid e) => Monoid (Update e) where
+  mempty = Update idE idE idE
 
 -- | An update's issued effect
-issued :: Lens' (Update s) (Effect s)
+issued :: Lens' (Update e) e
 issued = lens uIssued (\u e -> u { uIssued = e })
 
 -- | An update's produced reservation
-produced :: Lens' (Update s) (Effect s)
+produced :: Lens' (Update e) e
 produced = lens uProduced (\u e -> u { uProduced = e })
 
 -- | An update's consumed reservation
-consumed :: Lens' (Update s) (Effect s)
+consumed :: Lens' (Update e) e
 consumed = lens uConsumed (\u e -> u { uConsumed = e })
 
-type CarolEnv s m = ReaderT (Conref s -> m s, Effect s -> m (Maybe (Effect s))) (StateT (Update s) m)
+type CarolEnv c e s m
+  = ReaderT (c -> m s, e -> m (Maybe e)) (StateT (Update e) m)
 
 ----------------------------------------------------------------------
 
 -- | A "carrier" for a specific 'CARD'.
-class (CARD s, Monad m) => CCarrier c s m where
-  handleQ :: c -> HelpMe (Conref s) (Effect s) s (a, Update s) -> m a
-  handleQAsync :: c -> HelpMe (Conref s) (Effect s) s (a, Update s) -> (a -> m ()) -> m ()
+class (CARD s, Monad m) => CCarrier r c e s m where
+  handleQ :: r -> HelpMe c e s (a, Update e) -> m a
+  handleQAsync :: r -> HelpMe c e s (a, Update e) -> (a -> m ()) -> m ()
 
 -- | Run a Carol operation using the provided carrier.
-carol :: (CCarrier c s m) => c -> Carol s a -> m a
-carol c t = handleQ c (runCarol' t)
+carol :: (CCarrier r c s m) => r -> Carol c e s a -> m a
+carol r t = handleQ r (runCarol' t)
 
 -- | Run a Carol operation in the background, taking a particular
 -- action after it terminates.
-carolAsync :: (CCarrier c s m) 
-           => c 
-           -> Carol s a 
+carolAsync :: (CCarrier r c e s m) 
+           => r
+           -> Carol c e s a 
            -> (a -> m ()) -- ^ Action to perform after operation
                           -- terminates
            -> m ()
-carolAsync c t fin = handleQAsync c (runCarol' t) fin
+carolAsync r t fin = handleQAsync r (runCarol' t) fin
 
 -- | Run a Carol operation in the background, with no post-termination
 -- action
-carolAsync' :: (CCarrier c s m) => c -> Carol s a -> m ()
-carolAsync' c t = handleQAsync c (runCarol' t) (const $ return ())
+carolAsync' :: (CCarrier r c e s m) => r -> Carol c e s a -> m ()
+carolAsync' r t = handleQAsync r (runCarol' t) (const $ return ())
 
 ----------------------------------------------------------------------
 
-data HelpMe c e r a = 
-    HelpMe c (r -> HelpMe c e r a)
+data HelpMe c e s a =
+    HelpMe c (s -> HelpMe c e s a)
     -- | Helper term for Consume
-  | GiveMe e (Maybe e -> HelpMe c e r a)
+  | GiveMe e (Maybe e -> HelpMe c e s a)
   | GotIt a
 
-instance Functor (HelpMe c e r) where
+instance Functor (HelpMe c e s) where
   fmap f (HelpMe c g) = HelpMe c (fmap f . g)
   fmap f (GiveMe e g) = GiveMe e (fmap f . g)
   fmap f (GotIt a) = GotIt (f a)
 
-instance Applicative (HelpMe c e r) where
+instance Applicative (HelpMe c e s) where
   pure = GotIt
-  (<*>) (HelpMe c f) a = HelpMe c (\r -> f r <*> a)
+  (<*>) (HelpMe c f) a = HelpMe c (\s -> f s <*> a)
   (<*>) (GiveMe e f) a = GiveMe e (\m -> f m <*> a)
   (<*>) (GotIt f) a = fmap f a
 
-instance Monad (HelpMe c e r) where
-  (>>=) (HelpMe c a) f = HelpMe c (\r -> a r >>= f)
+instance Monad (HelpMe c e s) where
+  (>>=) (HelpMe c a) f = HelpMe c (\s -> a s >>= f)
   (>>=) (GiveMe e a) f = GiveMe e (\m -> a m >>= f)
   (>>=) (GotIt a) f = f a
 
-helpMe :: c -> HelpMe c e r r
+helpMe :: c -> HelpMe c e s s
 helpMe c = HelpMe c return
 
-giveMe :: e -> HelpMe c e r (Maybe e)
+giveMe :: e -> HelpMe c e s (Maybe e)
 giveMe e = GiveMe e return
 
-staticApp :: r -> HelpMe c e r a -> a
-staticApp r = \case
-  HelpMe _ f -> staticApp r (f r)
-  GiveMe _ f -> staticApp r (f Nothing)
+staticApp :: s -> HelpMe c e s a -> a
+staticApp s = \case
+  HelpMe _ f -> staticApp s (f s)
+  GiveMe _ f -> staticApp s (f Nothing)
   GotIt a -> a
 
 runCarol :: (Monad m)
-  => (Conref s -> m s)
-  -> (Effect s -> m (Maybe (Effect s)))
-  -> Carol s a
-  -> m (a, Update s)
+  => (c -> m s)
+  -> (e -> m (Maybe e))
+  -> Carol c e s a
+  -> m (a, Update e)
 runCarol runq runc t = runStateT (runReaderT (evalCarol t) (runq,runc)) mempty
 
-runCarol' :: Carol s a -> HelpMe (Conref s) (Effect s) s (a, Update s)
+runCarol' :: Carol c e s a -> HelpMe c e s (a, Update e)
 runCarol' = runCarol helpMe giveMe
 
-runQuery :: (Monad m) => Conref s -> CarolEnv s m s
+runQuery :: (Monad m) => c -> CarolEnv c e s m s
 runQuery = (lift.lift =<<) . ((fst <$> ask) <*>) . pure
 
-runConsume :: (Monad m) => Effect s -> CarolEnv s m (Maybe (Effect s))
+runConsume :: (Monad m) => e -> CarolEnv c e s m (Maybe e)
 runConsume = (lift.lift =<<) . ((snd <$> ask) <*>) . pure
 
-evalCarol :: (Monad m) => Carol s a -> CarolEnv s m a
+evalCarol :: (Monad m) => Carol c e s a -> CarolEnv c e s m a
 evalCarol = \case
   Pure a -> return a
-  Free (Issue e t) -> evalCarol t <* (issued %= (e |<<|))
+  Free (Issue e t) -> evalCarol t <* (issued %= (e <>))
   Free (Query c ft) -> evalCarol.ft =<< runQuery c
   Free (Consume e ft) -> do
     me <- runConsume e
     case me of
-      Just e' -> consumed %= (e' |<<|)
+      Just e' -> consumed %= (e' <>)
       Nothing -> return ()
     evalCarol (ft me)
-  Free (Produce e t) -> evalCarol t <* (produced %= (e |<<|))
+  Free (Produce e t) -> evalCarol t <* (produced %= (e <>))
 
-issue :: (CARD s) => Effect s -> Carol s ()
+issue :: e -> Carol c e s ()
 issue e = Free (Issue e (Pure ()))
 
-query :: (CARD s) => Conref s -> Carol s s
+query :: c -> Carol c e s s
 query c = Free (Query c Pure)
 
-queryT :: (CARD s) => Carol s s
-queryT = query crT
+queryT :: (Monoid c) => Carol c e s s
+queryT = query uniC
 
-consume :: (CARD s) => Effect s -> Carol s (Maybe (Effect s))
+consume :: e -> Carol c e s (Maybe e)
 consume e = Free (Consume e Pure)
 
-produce :: (CARD s) => Effect s -> Carol s ()
+produce :: e -> Carol s e s ()
 produce e = Free (Produce e (Pure ()))

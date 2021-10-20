@@ -26,11 +26,15 @@ import Data.CvRDT
 import Data.CARD
 
 -- | Reservation store
-data Ress i s = Ress
-  { resStore :: Map (EResId i) (ERes s) }
-  deriving (Eq,Ord,Generic)
+data Ress i e = Ress
+  { resStore :: Map (EResId i) (ERes e) }
+  deriving (Show,Eq,Ord,Generic)
 
-deriving instance (CARD s, Show i, Show (Effect s)) => Show (Ress i s)
+-- deriving instance (Show i, Show e) => Show (Ress i s)
+
+instance (ToJSONKey i, ToJSON i, ToJSON e) => ToJSON (Ress i e)
+instance (Ord i, FromJSONKey i, FromJSON i, Ord e, FromJSON e) 
+         => FromJSON (Ress i e)
 
 type EResId i = (i,i,Int)
 
@@ -46,25 +50,21 @@ producer = _2
 seqNum :: Lens' (EResId i) Int
 seqNum = _3
 
-type ERes s = (Int, Effect s)
+type ERes e = (Int, e)
 
-erClock :: Lens' (ERes s) Int
+erClock :: Lens' (ERes e) Int
 erClock = _1
 
-erEffect :: (CARD s) => Lens' (ERes s) (Effect s)
+erEffect :: Lens' (ERes e) e
 erEffect = _2
 
-newERes :: (CARD s) => Effect s -> ERes s
+newERes :: e -> ERes e
 newERes e = (0, e)
 
 -- | Replace a reservation's effect with a new, partly or wholly
 -- consumed, effect.  This automatically bumps the clock.
-modERes :: (CARD s) => Effect s -> ERes s -> ERes s
+modERes :: e -> ERes e -> ERes e
 modERes e (n,_) = (n + 1,e)
-
-instance (ToJSONKey i, ToJSON i, ToJSON (Ef s)) => ToJSON (Ress i s)
-instance (Ord i, FromJSONKey i, FromJSON i, Ord (Ef s), FromJSON (Ef s)) 
-         => FromJSON (Ress i s)
 
 highestSeqNum :: (Eq i) => i -> [EResId i] -> Int
 highestSeqNum i = foldr max 0
@@ -75,28 +75,32 @@ highestSeqNum i = foldr max 0
 -- argument is the producing replica, and the reservations are pairs
 -- of the form (Owner,Effect), where the Owner is the replica that
 -- will be able to consume this effect.
-produceRes :: (Ord i, CARD s) => i -> [(i,Effect s)] -> Ress i s -> Ress i s
+produceRes :: (Ord i) => i -> [(i,e)] -> Ress i e -> Ress i e
 produceRes i es (Ress m) =
   let n0 = highestSeqNum i (Map.keys m)
   in Ress $ foldr (\(n,(o,e)) a -> Map.insert (o,i,n) (newERes e) a) 
                   m
                   (zip [(n0 + 1) ..] es)
 
--- | Consume an effect from a reservation store.  The first argument
+-- | Consume an effect from a reservation store.  The second argument
 -- is the ID of the replica that is doing the consuming.  If the
 -- effect can be removed, the result is Just (RemainingResStore).
 -- Otherwise, the result is Nothing.
-consumeRes :: (Ord i, CARD s) 
-  => i
-  -> Effect s
-  -> Ress i s
-  -> Maybe (Ress i s)
-consumeRes _ e r | e == ef0 = Just r
-consumeRes i e (Ress m) =
+consumeRes :: (Ord i, Eq e, EffectOrd c e) 
+  => Wrt c
+  -> i
+  -> e
+  -> Ress i e
+  -> Maybe (Ress i e)
+consumeRes _ _ e r | e == idE = Just r
+consumeRes w i e (Ress m) =
   let fr ((k,r):es) | k^.owner == i && (r^.erEffect) == e = Just (k,ef0)
-      fr ((k,r):es) | k^.owner == i = case extractE (r^.erEffect) e of
-                                        Right e' -> Just (k,e')
-                                        Left () -> fr es
+      fr ((k,r):es) | k^.owner == i = case effectSlice w e (r^.erEffect) of
+                                        Just (_,e') -> Just (k,e')
+                                        Nothing -> fr es
+      -- fr ((k,r):es) | k^.owner == i = case extractE (r^.erEffect) e of
+      --                                   Right e' -> Just (k,e')
+      --                                   Left () -> fr es
       fr (_:es) = fr es
       fr [] = Nothing
   in case fr (Map.assocs m) of
@@ -104,7 +108,7 @@ consumeRes i e (Ress m) =
        Nothing -> Nothing
 
 -- | Look up effect reservations owned by a replica.
-resLookup :: (Ord i, CARD s) => i -> Ress i s -> [Effect s]
+resLookup :: (Ord i) => i -> Ress i e -> [e]
 resLookup i (Ress m) = view erEffect <$> Map.foldrWithKey' f [] m
   where f k r rs = if k^.owner == i
                       then r : rs
@@ -114,21 +118,21 @@ resKeys (Ress m) = Map.keys m
 
 -- | Gather all effect reservations.  Note that this will arbitrarily
 -- order effects by owning replica.
-resAll :: (Ord i, CARD s) => Ress i s -> [Effect s]
+resAll :: (Ord i) => Ress i s -> [e]
 resAll (Ress m) = view erEffect <$> Map.elems m
 
 -- | Get the worst-case effect from the reservation store.  This
 -- simply filters out effects that are in accord with the specified
 -- conref.
-resWX :: (Ord i, CARD s) => Conref s -> Ress i s -> Effect s
-resWX c _ | c == crT = ef0 -- optimization case
-resWX c r = 
-  let f e es = if checkBlock c e 
-                  then e |>>| es
+resWX :: (Ord i, EffectOrd c e) => c -> Ress i s -> e
+resWX c _ | c == uniC = idE -- optimization case
+resWX c r =
+  let f e es = if effectLe c idE e
+                  then es <> e
                   else es
-  in foldr f ef0 (resAll r)
+  in foldr f idE (resAll r)
 
-instance (Ord i, CARD s) => Semigroup (Ress i s) where
+instance (Ord i) => Semigroup (Ress i e) where
   (<>) (Ress m1) (Ress m2) =
     let ks = nub $ Map.keys m1 ++ Map.keys m2
         f k = case (Map.lookup k m1, Map.lookup k m2) of
