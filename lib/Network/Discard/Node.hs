@@ -41,22 +41,22 @@ import Data.EventGraph.Ipfs (IpfsEG,mkIpfsEG'')
 -- | A program to run on a replica node, which has access to the
 -- state-management thread via the 'ManagerConn' in order to execute
 -- non-trivial operations.
-type Script r c i s a = 
+type Script r h i c e s a =
   i 
-  -> ManagerConn c i s
+  -> ManagerConn h i c e s
   -> IO a
 
 -- | Run a replica node, explicitly providing an initial state.  Make
 -- sure the initial store value matches the initial store history!
-runNode' :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSONKey (Cr s), ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSONKey (Cr s), FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
+runNode' :: (Ord s, ManC (IpfsEG i) h i c e s, ToJSON (h (i,e)), ToJSON i, ToJSONKey i, ToJSONKey c, ToJSON c, ToJSON e, FromJSONKey i, FromJSON i, FromJSONKey c, FromJSON c, FromJSON e, FromJSON (h (i, e)), h ~ Edge (IpfsEG i))
          => i  -- ^ Name
          -> String -- ^ IPFS API URI
          -> NetConf i -- ^ Replica network
          -> s -- ^ Initial store value
-         -> Store c i s -- ^ Initial store (locks + history + res)
-         -> DManagerSettings c i s
-         -> Script (IpfsEG i) c i s a -- ^ Actions to perform
-         -> IO (a, (s, Store c i s))
+         -> Store h i c e -- ^ Initial store (locks + history + res)
+         -> DManagerSettings h i c e s
+         -> Script (IpfsEG i) h i c e s a -- ^ Actions to perform
+         -> IO (a, (s, Store h i c e))
 runNode' i ipfsAddr net val0 store0 dmsets script = do
   port <- case self i net of
             Just (_,port) -> return port
@@ -79,32 +79,35 @@ runNode' i ipfsAddr net val0 store0 dmsets script = do
 -- and background threads killed.  The node will start with an empty
 -- history and will be brought up-to-date by broadcasts from the
 -- network.
-runNode :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSONKey (Cr s), ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSONKey (Cr s), FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i))
+runNode :: (Ord s, ManC (IpfsEG i) h i c e s, ToJSON (h (i,e)), ToJSON i, ToJSONKey i, ToJSONKey c, ToJSON c, ToJSON e, FromJSONKey i, FromJSON i, FromJSONKey c, FromJSON c, FromJSON e, FromJSON (h (i,e)), h ~ Edge (IpfsEG i))
         => i -- ^ name
-        -> Bool -- ^ Whether to use tokens
+        -> Maybe [c] -- ^ Whether to use tokens
         -> String -- ^ IPFS API URI
         -> NetConf i -- ^ Replica network
-        -> DManagerSettings c i s
-        -> Script (IpfsEG i) c i s a
+        -> DManagerSettings h i c e s
+        -> Script (IpfsEG i) h i c e s a
         -> IO a
 runNode i useTokens ipfsAddr net dmsets script = 
   fst <$> runNode' i ipfsAddr net val0 store0 dmsets script
   where val0 = baseStoreValue dmsets
-        ls0 = if useTokens
-                 then initTokens enumConrefs (minimum $ listIds net)
-                 else mempty -- Creating an empty Locks
+        ls0 = case useTokens of
+                Just cs -> initTokens cs (minimum $ listIds net)
+                Nothing -> mempty -- Creating an empty Locks
+        -- ls0 = if useTokens
+        --          then initTokens enumConrefs (minimum $ listIds net)
+        --          else mempty -- Creating an empty Locks
         store0 = ((ls0, Data.EventGraph.empty), mempty)
 
 -- | Run a node, loading the initial state from the given file (if it
 -- exists) and writing the final state to the file on exit (creating
 -- it if it does not exist).
-runNodeFile :: (Ord s, ManC (IpfsEG i) c i s (), ToJSON (c (i, Effect s)), ToJSON i, ToJSONKey i, ToJSONKey (Cr s), ToJSON (Cr s), ToJSON (Ef s), FromJSONKey i, FromJSON i, FromJSONKey (Cr s), FromJSON (Cr s), FromJSON (Ef s), FromJSON (c (i, Effect s)), c ~ Edge (IpfsEG i), FromJSON s, ToJSON s)
+runNodeFile :: (Ord s, ManC (IpfsEG i) h i c e s, ToJSON (h (i,e)), ToJSON i, ToJSONKey i, ToJSONKey c, ToJSON c, ToJSON e, FromJSONKey i, FromJSON i, FromJSONKey c, FromJSON c, FromJSON e, FromJSON (h (i,e)), h ~ Edge (IpfsEG i), FromJSON s, ToJSON s)
             => i -- ^ Name
             -> String -- ^ IPFS API address
             -> NetConf i -- ^ Replica network
             -> FilePath -- ^ Save-file path
-            -> DManagerSettings c i s
-            -> Script (IpfsEG i) c i s a -- ^ Actions to perform
+            -> DManagerSettings h i c e s
+            -> Script (IpfsEG i) h i c e s a -- ^ Actions to perform
             -> IO a
 runNodeFile i ipfsAddr net sfile dmsets script = do
   let trypfile = doesFileExist sfile
@@ -118,10 +121,10 @@ runNodeFile i ipfsAddr net sfile dmsets script = do
   encodeFile sfile stateFinal
   return a
 
-mkListener :: (Carries HttpT (Store c i s))
+mkListener :: (Carries HttpT (Store h i c e))
            => Int 
            -> Src HttpT 
-           -> ManagerConn c i s
+           -> ManagerConn h i c e s
            -> IO ThreadId
 mkListener dbl src man = 
   forkIO (listen dbl src handle)
