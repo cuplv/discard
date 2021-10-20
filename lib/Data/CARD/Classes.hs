@@ -2,9 +2,11 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
 
 module Data.CARD.Classes
   ( EffectDom (..)
+  , EffectSlice (..)
   , idE
   , ConstE (..)
   , Absorbing (..)
@@ -15,11 +17,25 @@ module Data.CARD.Classes
   , idC
   , impl
   , UniversalC (..)
-  , Wrt (..)
   ) where
 
 import Data.Aeson
 import GHC.Generics
+
+class EffectSlice e where
+  -- "camoslice _ e1 e2" tries to extract an effect equivalent to e1
+  -- from e2.  If successful, it returns Just (e1',e2'), where e1' is
+  -- the extracted effect (not necessarily identical to e1) and e2' is
+  -- the remainder.
+  effectSlice :: e -> e -> Maybe (e,e)
+  effectSlice _ _ = Nothing
+  -- "camoMerge _ e1 e2" tries to merge the effects.  If successful,
+  -- it returns Just e3, where e3 is the merged effect.
+  effectMerge :: e -> e -> Maybe e
+  effectMerge _ _ = Nothing
+
+  effectPartition :: Int -> e -> [e]
+  effectPartition _ e = [e]
 
 {-| An 'EffectDom' is a domain of effects (@e@) on some state type
     (@s@), in which each effect denotes (by 'eFun') a pure
@@ -141,8 +157,6 @@ instance (Absorbing a) => Absorbing (Maybe a) where
 impl :: (Eq a, Semigroup a) => a -> a -> Bool
 impl a b = a <> b == a
 
-data Wrt c = Wrt
-
 class StateOrd c s where
   -- Preorder on states.  This is used in certain situations for
   -- optimizations, but if you don't want to define it, you are safe
@@ -160,18 +174,6 @@ class StateOrd c s where
 class EffectOrd c e where
   -- Preorder on effects.
   effectLe :: c -> e -> e -> Bool
-
-  -- "camoslice _ e1 e2" tries to extract an effect equivalent to e1
-  -- from e2.  If successful, it returns Just (e1',e2'), where e1' is
-  -- the extracted effect (not necessarily identical to e1) and e2' is
-  -- the remainder.
-  effectSlice :: Wrt c -> e -> e -> Maybe (e,e)
-  effectSlice _ _ _ = Nothing
-
-  -- "camoMerge _ e1 e2" tries to merge the effects.  If successful,
-  -- it returns Just e3, where e3 is the merged effect.
-  effectMerge :: Wrt c -> e -> e -> Maybe e
-  effectMerge _ _ _ = Nothing
 
 class (EffectDom e s, StateOrd c s, EffectOrd c e) => Camo c e s
 
@@ -202,11 +204,6 @@ instance (Eq s) => StateOrd () s where
 
 instance (Eq e, Monoid e) => EffectOrd () e where
   effectLe _ e1 e2 = e1 == e2
-  effectSlice _ e1 e2 | e1 == e2 = Just (e2,mempty)
-                      | e1 == mempty = Just (mempty,e2)
-                      | otherwise = Nothing
-  effectMerge _ e1 e2 | e1 == mempty && e2 == mempty = Just mempty
-                      | otherwise = Nothing
 
 instance (Eq e, Monoid e, Eq s, EffectDom e s) => Camo () e s
 
@@ -274,13 +271,12 @@ instance (StateOrd c e) => StateOrd (UniversalC c) e where
   stateLe UniversalC = \_ _ -> True
   stateLe (RelateC c) = stateLe c
 
-cuwrt :: Wrt (UniversalC c) -> Wrt c
-cuwrt Wrt = Wrt
-
 instance (EffectOrd c e) => EffectOrd (UniversalC c) e where
   effectLe UniversalC = \_ _ -> True
   effectLe (RelateC c) = effectLe c
-  effectSlice wrt e1 e2 = effectSlice (cuwrt wrt) e1 e2
-  effectMerge wrt e1 e2 = effectMerge (cuwrt wrt) e1 e2
+
+-- instance EffectSlice e where
+--   effectSlice wrt e1 e2 = effectSlice (cuwrt wrt) e1 e2
+--   effectMerge wrt e1 e2 = effectMerge (cuwrt wrt) e1 e2
 
 instance (Camo c e s) => Camo (UniversalC c) e s

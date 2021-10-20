@@ -58,7 +58,7 @@ data RCIndex i c j = RCIndex
   , rciControl :: RateControl (i,c) j }
 
 -- | Create a new index
-newRCIndex :: NominalDiffTime -> IO (RCIndex i c j)
+newRCIndex :: (Monoid c) => NominalDiffTime -> IO (RCIndex i c j)
 newRCIndex t = do
   rc <- RateControl 1 True Nothing Open [] <$> newTQueueIO
   return $ RCIndex (RCSettings t) uniC rc
@@ -69,13 +69,13 @@ getRCBlocker (RCIndex _ cb _) = cb
 -- | Report a failure.  The @c@ should be the smallest relevant
 -- bit of the blocking lock.  The @j@ is the job that will be retried
 -- later.
-reportFailure :: c -> j -> RCIndex i c j -> IO (RCIndex i c j)
+reportFailure :: (Semigroup c) => c -> j -> RCIndex i c j -> IO (RCIndex i c j)
 reportFailure c j (RCIndex st cb rc) =
   RCIndex st (cb <> c) <$> reportFailure' st j rc
 
 
 -- | Report a successful effect emission.
-reportSuccess :: (EffectOrd c e) => e -> RCIndex i c j -> IO (RCIndex i c j)
+reportSuccess :: (Monoid e, EffectOrd c e) => e -> RCIndex i c j -> IO (RCIndex i c j)
 reportSuccess e (RCIndex st cb rc) =
   if effectLe cb idE e
      then do putStrLn ""
@@ -90,7 +90,7 @@ getRetry (RCIndex st cb rc) = getRetry' st rc >>= \case
   Just (j,rc') -> return (Just (j, RCIndex st cb rc'))
   Nothing -> return Nothing
 
-enqueGrant :: (Eq i) => (i,c) -> RCIndex i c j -> IO (RCIndex i c j)
+enqueGrant :: (Eq i, Eq c) => (i,c) -> RCIndex i c j -> IO (RCIndex i c j)
 enqueGrant g (RCIndex st cb rc) = do
   RCIndex st cb <$> enqueGrant' st g rc
 

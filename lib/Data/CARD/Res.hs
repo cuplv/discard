@@ -86,16 +86,15 @@ produceRes i es (Ress m) =
 -- is the ID of the replica that is doing the consuming.  If the
 -- effect can be removed, the result is Just (RemainingResStore).
 -- Otherwise, the result is Nothing.
-consumeRes :: (Ord i, Eq e, Monoid e, EffectOrd c e) 
-  => Wrt c
-  -> i
+consumeRes :: (Ord i, Eq e, Monoid e, EffectSlice e) 
+  => i
   -> e
   -> Ress i e
   -> Maybe (Ress i e)
-consumeRes _ _ e r | e == idE = Just r
-consumeRes w i e (Ress m) =
+consumeRes _ e r | e == idE = Just r
+consumeRes i e (Ress m) =
   let fr ((k,r):es) | k^.owner == i && (r^.erEffect) == e = Just (k,idE)
-      fr ((k,r):es) | k^.owner == i = case effectSlice w e (r^.erEffect) of
+      fr ((k,r):es) | k^.owner == i = case effectSlice e (r^.erEffect) of
                                         Just (_,e') -> Just (k,e')
                                         Nothing -> fr es
       -- fr ((k,r):es) | k^.owner == i = case extractE (r^.erEffect) e of

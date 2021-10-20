@@ -46,48 +46,48 @@ import Lang.Carol.Internal
 import Network.Discard.RateControl
 import Network.Discard.Broadcast
 
-data Job s m a = 
+data Job c e s m a = 
     -- | Issue the given effect.
-    Emit    (Update s) (     m (Job s m a))
+    Emit (Update e) (m (Job c e s m a))
     -- | Request locks for the given conref.
-  | Request (Conref s) (s -> m (Job s m a))
+  | Request c (s -> m (Job c e s m a))
     -- | Return the value to the caller.
-  | Finish             (     m a          )
+  | Finish (m a)
     -- | Try to consume the given effect, passing it along if
     -- successful.
-  | TryConsume (Effect s) (Maybe (Effect s) -> m (Job s m a))
+  | TryConsume e (Maybe e -> m (Job c e s m a))
 
-handleQ' :: (Monad m, CARD s)
-        => (r -> m a) -- ^ Return callback
-        -> m s -- ^ Latest store ref
-        -> HelpMe (Conref s) (Effect s) s (r, Update s)
-        -> m (Job s m a)
+handleQ' :: (Monad m, Eq e, Monoid e, Eq c, Monoid c)
+         => (r -> m a) -- ^ Return callback
+         -> m s -- ^ Latest store ref
+         -> HelpMe c e s (r, Update e)
+         -> m (Job c e s m a)
 handleQ' fin latest = \case
-  HelpMe c f 
-    | c == crT -> handleQ' fin latest . f =<< latest
+  HelpMe c f
+    | c == uniC -> handleQ' fin latest . f =<< latest
     | otherwise -> return (Request c (handleQ' fin latest . f))
   GiveMe e f
-    | e == ef0 -> handleQ' fin latest (f (Just ef0))
+    | e == idE -> handleQ' fin latest (f (Just idE))
     | otherwise -> return (TryConsume e (handleQ' fin latest . f))
-  GotIt (r,u) 
-    |    u^.issued == ef0 
-      && u^.produced == ef0 
-      && u^.consumed == ef0 -> return finish
+  GotIt (r,u)
+    |    u^.issued == idE
+      && u^.produced == idE
+      && u^.consumed == idE -> return finish
     | otherwise -> return (Emit u (return finish))
     where finish = Finish (fin r)
 
-handleQM :: (CARD s)
+handleQM :: (Eq e, Eq c, Monoid e, Monoid c)
          => (a -> IO ()) -- ^ Action to take on completion
-         -> ManagerConn i r s -- ^ Manager to handle if necessary
-         -> HelpMe (Conref s) (Effect s) s (a, Update s)
+         -> ManagerConn h i c e s -- ^ Manager to handle if necessary
+         -> HelpMe c e s (a, Update e)
          -> IO ()
 handleQM fin man h = handleQ' fin (getLatestVal man) h >>= \case
   Finish m -> m
   j -> giveJob j man
 
-handleQR :: (CARD s)
-         => ManagerConn i r s
-         -> HelpMe (Conref s) (Effect s) s (a, Update s)
+handleQR :: (Eq e, Eq c, Monoid e, Monoid c)
+         => ManagerConn h i c e s
+         -> HelpMe c e s (a, Update e)
          -> IO a
 handleQR man h = do
   tmv <- newEmptyTMVarIO
@@ -99,19 +99,19 @@ handleQR man h = do
 -- trivial, and perform some final action when it is complete.  This
 -- action may be performed on either the calling thread or the manager
 -- thread.
-runCarolM :: (CARD s) 
-       => ManagerConn i r s 
-       -> (a -> IO ()) -- ^ Final action to execute on completion
-       -> Carol s a -- ^ Operation to run, feeding the final action
-       -> IO ()
+runCarolM :: (Eq e, Eq c, Monoid e, Monoid c)
+          => ManagerConn h i c e s
+          -> (a -> IO ()) -- ^ Final action to execute on completion
+          -> Carol c e s a -- ^ Operation to run, feeding the final action
+          -> IO ()
 runCarolM man fin t = handleQM fin man (runCarol' t)
 
 -- | Run an operation, handing it off the store manager if it is not
 -- trivial, and return the result to the original caller
-runCarolR :: (CARD s)
-       => ManagerConn i r s
-       -> Carol s a
-       -> IO a
+runCarolR :: (Eq e, Eq c, Monoid e, Monoid c)
+          => ManagerConn h i c e s
+          -> Carol c e s a
+          -> IO a
 runCarolR man t = handleQR man (runCarol' t)
 
 data Work j = Work j j
@@ -129,58 +129,63 @@ failJob (Working j0 _) = Idle
 
 finishJob (Working _ _) = Idle
 
-data Manager c i s = Manager
-  { manInbox :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
+data Manager h i c e s = Manager
+  { manInbox :: TQueue (Either (BMsg (Store h i c e)) (Job c e s IO ()))
   , manId :: i
   , manOthers :: [i]
-  , manJobQueue :: TQueue (Job s IO ())
-  , manWaitingRoom :: [(Conref s, s -> IO (Job s IO ()))]
-  , manCurrentJob :: Workspace (Job s IO ())
-  , manLatest :: TVar (s, Store c i s)
-  , manRCIndex :: RCIndex i s (Job s IO ())
+  , manJobQueue :: TQueue (Job c e s IO ())
+  , manWaitingRoom :: [(c, s -> IO (Job c e s IO ()))]
+  , manCurrentJob :: Workspace (Job c e s IO ())
+  , manLatest :: TVar (s, Store h i c e)
+  , manRCIndex :: RCIndex i c (Job c e s IO ())
   , grantMultiplex :: Int
-  , batcheff :: [Effect s]
+  , batcheff :: [e]
   , batchSize :: Int
   , onGetBroadcastCb :: IO ()
   , manDebugLevel :: Int }
 
-type ManM r c i s k = StateT (Manager c i s) (CvRepCmd r (Store c i s) k IO)
+type ManM r h i c e s k
+  = StateT
+      (Manager h i c e s)
+      (CvRepCmd r (Store h i c e) k IO)
 
-class (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) => ManC r c i s k
-instance (CvRDT r (Hist c i s) IO, Ord i, CARD s, CvChain r c (i, Effect s) IO) => ManC r c i s k
+class
+  (CvRDT r (Hist h i e) IO, Ord i, CvChain r h (i,e) IO, Eq e, Eq c, Ord e, Ord c, Monoid e, Monoid c, EffectSlice e, EffectOrd c e, EffectDom e s) => ManC r h i c e s
+instance
+  (CvRDT r (Hist h i e) IO, Ord i, CvChain r h (i,e) IO, Eq e, Eq c, Ord e, Ord c, Monoid e, Monoid c, EffectSlice e, EffectOrd c e, EffectDom e s) => ManC r h i c e s
 
-data ManagerConn c i s = ManagerConn 
-  { eventQueue :: TQueue (Either (BMsg (Store c i s)) (Job s IO ()))
-  , latestState :: TVar (s, Store c i s)
+data ManagerConn h i c e s = ManagerConn 
+  { eventQueue :: TQueue (Either (BMsg (Store h i c e)) (Job c e s IO ()))
+  , latestState :: TVar (s, Store h i c e)
   , manLoopThreadId :: ThreadId }
 
-instance (CARD s) => CCarrier (ManagerConn c i s) s IO where
+instance (Eq e, Eq c, Monoid e, Monoid c) => CCarrier (ManagerConn h i c e s) c e s IO where
   handleQ = handleQR
   handleQAsync c h fin = handleQM fin c h
 
-stateStore :: Lens' (s, Store c i s) (Store c i s)
+stateStore :: Lens' (s, Store h i c e) (Store h i c e)
 stateStore = _2
 
-stateVal :: Lens' (s, Store c i s) s
+stateVal :: Lens' (s, Store h i c e) s
 stateVal = _1
 
-giveUpdate :: BMsg (Store c i s) -> ManagerConn c i s -> IO ()
+giveUpdate :: BMsg (Store h i c e) -> ManagerConn h i c e s -> IO ()
 giveUpdate m (ManagerConn q _ _) = lstm $ writeTQueue q (Left m)
 
-giveJob :: Job s IO () -> ManagerConn c i s -> IO ()
+giveJob :: Job c e s IO () -> ManagerConn h i c e s -> IO ()
 giveJob j (ManagerConn q _ _) = lstm $ writeTQueue q (Right j)
 
-getLatestState :: ManagerConn c i s -> IO (s, Store c i s)
+getLatestState :: ManagerConn h i c e s -> IO (s, Store h i c e)
 getLatestState (ManagerConn _ v _) = readTVarIO v
 
-getLatestVal :: ManagerConn c i s -> IO s
+getLatestVal :: ManagerConn h i c e s -> IO s
 getLatestVal m = (^.stateVal) <$> getLatestState m
 
-getLatestStore :: ManagerConn c i s -> IO (Store c i s)
+getLatestStore :: ManagerConn h i c e s -> IO (Store h i c e)
 getLatestStore m = (^.stateStore) <$> getLatestState m
 
-killManager :: ManagerConn c i s -> IO (s, Store c i s)
-killManager conn@(ManagerConn _ _ i) = do 
+killManager :: ManagerConn h i c e s -> IO (s, Store h i c e)
+killManager conn@(ManagerConn _ _ i) = do
   sFinal <- getLatestState conn
   killThread i
   return sFinal
@@ -189,22 +194,22 @@ killManager conn@(ManagerConn _ _ i) = do
 ms2s :: (Fractional a) => Int -> a
 ms2s ms = fromIntegral ms / 1000000
 
-data DManagerSettings c i s = DManagerSettings
+data DManagerSettings h i c e s = DManagerSettings
   { timeoutUnitSize :: Int
   , setBatchSize :: Int
-  , onUpdate :: (s, Store c i s) -> IO ()
+  , onUpdate :: (s, Store h i c e) -> IO ()
   , onValUpdate :: s -> IO ()
-  , onLockUpdate :: Locks i s -> IO ()
+  , onLockUpdate :: Locks i c -> IO ()
   , onGetBroadcast :: IO ()
   , baseStoreValue :: s
   , dmsDebugLevel :: Int }
 
 -- | Default settings using 'mempty' for the base store value.
-defaultDManagerSettings :: (Monoid s) => DManagerSettings c i s
+defaultDManagerSettings :: (Monoid s) => DManagerSettings h i c e s
 defaultDManagerSettings = defaultDManagerSettings' mempty
 
 -- | Default settings with an explicitly provided base store value.
-defaultDManagerSettings' :: s -> DManagerSettings c i s
+defaultDManagerSettings' :: s -> DManagerSettings h i c e s
 defaultDManagerSettings' s = DManagerSettings
   { timeoutUnitSize = 100000
   , setBatchSize = 1
@@ -225,9 +230,9 @@ data Proceed = PrMessage | PrTimeout
 -- microseconds).  The return value of the await action is 'Just' @i@
 -- if a message has been received (from node @i@) and 'Nothing' if a
 -- timeout has been reached.
-awaitNetwork :: DManagerSettings c i s 
+awaitNetwork :: DManagerSettings h i c e s
              -> Maybe Int 
-             -> IO (DManagerSettings c i s, IO Bool)
+             -> IO (DManagerSettings h i c e s, IO Bool)
 awaitNetwork dms timeout = do
   tv <- newTVarIO Nothing
   let open pr = lstm $ readTVar tv >>= \case
@@ -249,15 +254,15 @@ awaitNetwork dms timeout = do
 -- | Initialize a replica manager.  This returns a 'TQueue' for
 -- updates from other replicas and jobs from other threads, and a
 -- 'TVar' which can be read to get the latest calculated store value.
-initManager :: (Ord s, ManC r c i s (), Transport t, Carries t (Store c i s), Res t ~ IO)
+initManager :: (Ord s, ManC r h i c e s, Transport t, Carries t (Store h i c e), Res t ~ IO)
             => i -- ^ This replica's ID
             -> [i] -- ^ Other replicas' IDs
             -> [Dest t] -- ^ Broadcast targets
             -> r -- ^ Event graph resolver 
             -> s -- ^ Initial store value
-            -> Store c i s -- ^ Initial history + locks
-            -> DManagerSettings c i s
-            -> IO (ManagerConn c i s)
+            -> Store h i c e -- ^ Initial history + locks
+            -> DManagerSettings h i c e s
+            -> IO (ManagerConn h i c e s)
 initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
@@ -292,10 +297,10 @@ initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLo
           return ()
   return $ ManagerConn eventQueue latestState ti
 
-doHellos :: (ManC r c i s k, Transport t, Carries t (Store c i s), Res t ~ IO) 
+doHellos :: (ManC r h i c e s, Transport t, Carries t (Store h i c e), Res t ~ IO) 
          => [Dest t] 
          -> IO ()
-         -> ManM r c i s k ()
+         -> ManM r h i c e s k ()
 doHellos ds cbB = do
   ups <- lift . lift $ helloAll ds
   lift $ mapM_ incorp ups
@@ -304,13 +309,13 @@ doHellos ds cbB = do
     _ -> liftIO cbB
   lift bcast
 
-dbg :: (ManC r c i s k) => Int -> String -> ManM r c i s k ()
+dbg :: (ManC r h i c e s) => Int -> String -> ManM r h i c e s k ()
 dbg d s = do man <- get
              if manDebugLevel man >= d
                 then liftIO $ putStrLn s >> hFlush stdout
                 else return ()
 
-managerLoop :: (ManC r c i s k) => ManM r c i s k ()
+managerLoop :: (ManC r h i c e s) => ManM r h i c e s k ()
 managerLoop = do
   -- Handle latest event (incorp update or enque job)
   -- liftIO $ putStrLn "Handle latest..."
@@ -337,23 +342,24 @@ managerLoop = do
   -- And loop
   managerLoop
 
-onCurrent :: (ManC r c i s k) 
-          => (Workspace (Job s IO ()) -> Workspace (Job s IO ())) 
-          -> ManM r c i s k ()
+onCurrent :: (ManC r h i c e s) 
+          => (Workspace (Job c e s IO ()) -> Workspace (Job c e s IO ())) 
+          -> ManM r h i c e s k ()
 onCurrent f = modify (\m -> m { manCurrentJob = f (manCurrentJob m) })
 
-onRCI :: (ManC r c i s k) 
-      => (RCIndex i s (Job s IO ()) -> IO (RCIndex i s (Job s IO ())))
-      -> ManM r c i s k ()
+onRCI :: (ManC r h i c e s) 
+      => (RCIndex i c (Job c e s IO ()) 
+          -> IO (RCIndex i c (Job c e s IO ())))
+      -> ManM r h i c e s k ()
 onRCI f = do rci <- manRCIndex <$> get
              rci' <- liftIO (f rci)
              modify (\m -> m {manRCIndex = rci' })
 
-data ManEvent c i s = ManNew (Either (BMsg (Store c i s)) 
-                                     (Job s IO ())) 
-                    | ManRate (RCIndex i s (Job s IO ())) 
+data ManEvent h i c e s = ManNew (Either (BMsg (Store h i c e)) 
+                                         (Job c e s IO ())) 
+                        | ManRate (RCIndex i c (Job c e s IO ())) 
 
-handleLatest :: (ManC r c i s k) => ManM r c i s k ()
+handleLatest :: (ManC r h i c e s) => ManM r h i c e s k ()
 handleLatest = do
   man <- get
   let updates = (ManRate <$> awaitTimeouts (manRCIndex man))
@@ -379,7 +385,8 @@ handleLatest = do
       modify (\m -> m { manRCIndex = rci' })
 
 
-getWaiting :: (ManC r c i s k) => ManM r c i s k (Maybe (Job s IO ()))
+getWaiting :: (ManC r h i c e s)
+           => ManM r h i c e s k (Maybe (Job c e s IO ()))
 getWaiting = do
   i <- manId <$> get
   others <- manOthers <$> get
@@ -398,35 +405,38 @@ getWaiting = do
       Just <$> (liftIO . fj =<< manGetLatest' c)
     Nothing -> return Nothing
 
-anyWaiting :: (ManC r c i s k) => ManM r c i s k Bool
+anyWaiting :: (ManC r h i c e s) => ManM r h i c e s k Bool
 anyWaiting = manWaitingRoom <$> get >>= \case
     [] -> return False
     _ -> return True
 
-manGetLatest :: (ManC r c i s k) => ManM r c i s k s
+manGetLatest :: (ManC r h i c e s) => ManM r h i c e s k s
 manGetLatest = (^.stateVal) <$> (lstm . readTVar =<< manLatest <$> get)
 
 -- | Get latest store value, weakened by the worst-case view of
 -- reservations according to the supplied conref.
-manGetLatest' :: (ManC r c i s k) => Conref s -> ManM r c i s k s
+manGetLatest' :: (ManC r h i c e s) => c -> ManM r h i c e s k s
 manGetLatest' c = do
   s <- lstm . readTVar =<< manLatest <$> get
   let re = resWX c (s ^. stateStore . ress)
-      v = runEffect (s ^. stateVal) re
+      v = eFun re (s ^. stateVal)
   return v
 
-putOnHold :: (ManC r c i s k) => Conref s -> (s -> IO (Job s IO ())) -> ManM r c i s k ()
+putOnHold :: (ManC r h i c e s)
+          => c
+          -> (s -> IO (Job c e s IO ()))
+          -> ManM r h i c e s k ()
 putOnHold c fj = do
   i <- manId <$> get
   lift (emitOn' locks $ return . request i c)
   modify (\m -> m { manWaitingRoom = (c,fj) : manWaitingRoom m })
 
-histAppend' :: (ManC r c i s k) => Effect s -> ManM r c i s k ()
+histAppend' :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
 histAppend' e = do
   i <- manId <$> get
   lift $ histAppend i e
 
-sendBatch :: (ManC r c i s k) => ManM r c i s k ()
+sendBatch :: (ManC r h i c e s) => ManM r h i c e s k ()
 sendBatch = do
   beff <- batcheff <$> get
   if length beff > 0
@@ -434,7 +444,7 @@ sendBatch = do
              modify $ \m -> m { batcheff = [] }
      else return ()
 
-enbatch :: (ManC r c i s k) => Effect s -> ManM r c i s k ()
+enbatch :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
 enbatch e = do
   bsize <- batchSize <$> get
   beff' <- (e:) . batcheff <$> get
@@ -443,7 +453,7 @@ enbatch e = do
      then sendBatch
      else return ()
 
-workOnJob :: (ManC r c i s k) => ManM r c i s k ()
+workOnJob :: (ManC r h i c e s) => ManM r h i c e s k ()
 workOnJob = manCurrentJob <$> get >>= \case
 
   Working j0 j -> do
@@ -470,7 +480,7 @@ workOnJob = manCurrentJob <$> get >>= \case
         let e = u^.issued
             cond = permitted' i 
                               (u^.consumed) 
-                              ((u^.issued) |>>| (u^.produced)) 
+                              ((u^.produced) <> (u^.issued)) 
                               ls
         case cond of
           Right () -> do
@@ -481,9 +491,9 @@ workOnJob = manCurrentJob <$> get >>= \case
             -- we also want to "atomize" the reservations into unit
             -- effects so that we can simply match them against
             -- consumed unit effects.
-            if (u^.produced) /= ef0
+            if (u^.produced) /= idE
                then let newRs = zip (i:others)
-                                    (partitionE
+                                    (effectPartition
                                        (length others + 1)
                                        (u^.produced))
                         r' = produceRes i newRs r
@@ -493,7 +503,7 @@ workOnJob = manCurrentJob <$> get >>= \case
             enbatch e
             onRCI $ reportSuccess e
             rci <- manRCIndex <$> get
-            if checkBlock (getRCBlocker rci) e
+            if effectLe (getRCBlocker rci) idE e
                then resurrectFails
                else return ()
             advJob m
@@ -502,7 +512,7 @@ workOnJob = manCurrentJob <$> get >>= \case
             -- Return consumed reservations to local pool.  Note that
             -- current version merges what might have before been
             -- distinct reservations into a single effect.
-            if (u^.consumed) /= ef0
+            if (u^.consumed) /= idE
                then do r <- lift.use $ store.ress
                        lift $ incorp' ress (produceRes i [(i,u^.consumed)] r)
                        return ()
@@ -546,10 +556,10 @@ workOnJob = manCurrentJob <$> get >>= \case
           -- If queue is empty, there is nothing left to do for now
           Nothing -> return ()
 
-advJob :: (ManC r c i s k) => IO (Job s IO ()) -> ManM r c i s k ()
+advJob :: (ManC r h i c e s) => IO (Job c e s IO ()) -> ManM r h i c e s k ()
 advJob = (onCurrent . stepJob =<<) . liftIO
 
-handleLockReqs :: (ManC r c i s k) => ManM r c i s k ()
+handleLockReqs :: (ManC r h i c e s) => ManM r h i c e s k ()
 handleLockReqs = do
   i <- manId <$> get
   rci <- manRCIndex <$> get
@@ -558,7 +568,7 @@ handleLockReqs = do
   
   modify (\m -> m { manRCIndex = rci' })
 
-grantLockReqs :: (ManC r c i s k) => ManM r c i s k ()
+grantLockReqs :: (ManC r h i c e s) => ManM r h i c e s k ()
 grantLockReqs = do
   man <- get
   liftIO (getGrant (manRCIndex man)) >>= \case
@@ -570,7 +580,7 @@ grantLockReqs = do
       return ()
     Nothing -> return ()
 
-resurrectFails :: (ManC r c i s k) => ManM r c i s k ()
+resurrectFails :: (ManC r h i c e s) => ManM r h i c e s k ()
 resurrectFails = do
   man <- get
   liftIO (getRetry (manRCIndex man)) >>= \case
@@ -585,16 +595,16 @@ resurrectFails = do
 lstm :: MonadIO m => STM a -> m a
 lstm = liftIO . atomically
 
-upWithSumms :: (Eq i, MonadIO m, Ord s, CARD s, Ord (Hist c i s), CvChain r c (i, Effect s) m)
-            => TVar (s, Store c i s) -- ^ Location to post store
-            -> ((s, Store c i s) -> m ()) -- ^ Main update callback
+upWithSumms :: (Eq i, MonadIO m, Ord s, Ord (Hist h i e), CvChain r h (i,e) m, Eq c, Ord c, EffectDom e s)
+            => TVar (s, Store h i c e) -- ^ Location to post store
+            -> ((s, Store h i c e) -> m ()) -- ^ Main update callback
             -> (s -> m ()) -- ^ Val-only update callback
-            -> (Locks i s -> m ()) -- ^ Locks-only update callback
+            -> (Locks i c -> m ()) -- ^ Locks-only update callback
             -> r -- ^ Resolver
             -> s -- ^ Base store value
-            -> Store c i s -- ^ Locks + History to evaluate
-            -> Map (Hist c i s) s -- ^ Summaries to use
-            -> m (Map (Hist c i s) s)
+            -> Store h i c e -- ^ Locks + History to evaluate
+            -> Map (Hist h i e) s -- ^ Summaries to use
+            -> m (Map (Hist h i e) s)
 upWithSumms stateV upCb upCbVal upCbLocks r valBase store' summs = do
   (val,store) <- lstm$ readTVar stateV
   val' <- evalHist r valBase (store'^.hist) summs

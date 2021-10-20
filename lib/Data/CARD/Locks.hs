@@ -223,7 +223,7 @@ requested i c1 (Locks m) = case Map.lookup i m of
 
 -- | Check if node 'i' is holding any locks
 holding :: (Ord i, Eq c, Monoid c) => i -> Locks i c -> Bool
-holding i (Tokens ts) | holding' i (Tokens ts) == Nothing = False
+holding i (Tokens ts) | holding' i (Tokens ts) == uniC = False
 holding i (Tokens ts) = True
 holding i (Locks m) = case Map.lookup i m of
   Just (_,c,_) -> if c == uniC
@@ -232,14 +232,13 @@ holding i (Locks m) = case Map.lookup i m of
   Nothing -> False
 
 -- | Return exactly the lock that 'i' is holding
-holding' :: (Ord i, Semigroup c) => i -> Locks i c -> Maybe c
+holding' :: (Ord i, Monoid c) => i -> Locks i c -> c
 holding' i (Tokens ts) = Map.foldrWithKey f uniC ts
-  where f c t mcs | tkState t /= Nothing && tkOwner t == i =
-                    (c <>) <$> mcs
-        f _ _ mcs = mcs
+  where f c t cs | tkState t /= Nothing && tkOwner t == i = (c <> cs)
+        f _ _ cs = cs
 holding' i (Locks m) = case Map.lookup i m of
-  Just (_,c,_) -> Just c
-  Nothing -> Nothing
+  Just (_,c,_) -> c
+  Nothing -> uniC
 
 -- | Check if currently requested lock has been confirmed by all
 -- participating identities
