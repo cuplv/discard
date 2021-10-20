@@ -15,8 +15,10 @@ library
                      , Data.EventGraph.SetEG
                      , Data.EventGraph.Ipfs
                      , Data.CARD
-                     , Data.CARD.Camo
-                     , Data.CARD.Effect
+                     , Data.CARD.Classes
+                     , Data.CARD.Counter
+                     , Data.CARD.Map
+                     , Data.CARD.Maybe
                      , Data.CARD.Locks
                      , Data.CARD.Res
                      , Data.CARD.Store
