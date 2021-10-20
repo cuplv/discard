@@ -10,40 +10,41 @@ module Lang.Carol.Warehouse
   ) where
 
 import Lang.Carol
+import Data.CARD.Counter
 
-
+type WarehouseOp = Carol (CounterC Int) (CounterE Int) Int
 
 -- | Sell a unit, using a reservation for safety.
-sellR :: Carol Counter Bool
+sellR :: WarehouseOp Bool
 sellR = do
-  let e = ef $ Sub 1
+  let e = subE 1
   consume e >>= \case
     Just _ -> do issue e
                  return True
     Nothing -> return False
 
 -- | Sell a unit, using a query for safety.
-sellQ :: Carol Counter Bool
+sellQ :: WarehouseOp Bool
 sellQ = do
-  (Counter s) <- query (cr$ LEQ)
+  s <- query lowerBound
   if s >= 1
-     then issue (ef$ Sub 1) >> return True
+     then issue (subE 1) >> return True
      else return False
 
 -- | Restock, producing reservations.
-restockQR :: Int -> Carol Counter Int
+restockQR :: Int -> WarehouseOp Int
 restockQR maxSpace = do
   n <- restockQQ maxSpace
   if n > 0
-     then produce (ef$ Sub n) >> return n
+     then produce (subE n) >> return n
      else return 0
 
 -- | Restock without producing reservations (so that units can be
 -- claimed using queries).
-restockQQ :: Int -> Carol Counter Int
+restockQQ :: Int -> WarehouseOp Int
 restockQQ maxSpace = do
-  (Counter s) <- query (cr$ GEQ)
+  s <- query upperBound
   let n = maxSpace - s
   if n > 0
-     then issue (ef$ Add n) >> return n
+     then issue (addE n) >> return n
      else return 0

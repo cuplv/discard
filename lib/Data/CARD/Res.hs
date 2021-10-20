@@ -86,7 +86,7 @@ produceRes i es (Ress m) =
 -- is the ID of the replica that is doing the consuming.  If the
 -- effect can be removed, the result is Just (RemainingResStore).
 -- Otherwise, the result is Nothing.
-consumeRes :: (Ord i, Eq e, EffectOrd c e) 
+consumeRes :: (Ord i, Eq e, Monoid e, EffectOrd c e) 
   => Wrt c
   -> i
   -> e
@@ -94,7 +94,7 @@ consumeRes :: (Ord i, Eq e, EffectOrd c e)
   -> Maybe (Ress i e)
 consumeRes _ _ e r | e == idE = Just r
 consumeRes w i e (Ress m) =
-  let fr ((k,r):es) | k^.owner == i && (r^.erEffect) == e = Just (k,ef0)
+  let fr ((k,r):es) | k^.owner == i && (r^.erEffect) == e = Just (k,idE)
       fr ((k,r):es) | k^.owner == i = case effectSlice w e (r^.erEffect) of
                                         Just (_,e') -> Just (k,e')
                                         Nothing -> fr es
@@ -118,13 +118,14 @@ resKeys (Ress m) = Map.keys m
 
 -- | Gather all effect reservations.  Note that this will arbitrarily
 -- order effects by owning replica.
-resAll :: (Ord i) => Ress i s -> [e]
+resAll :: (Ord i) => Ress i e -> [e]
 resAll (Ress m) = view erEffect <$> Map.elems m
 
 -- | Get the worst-case effect from the reservation store.  This
 -- simply filters out effects that are in accord with the specified
 -- conref.
-resWX :: (Ord i, EffectOrd c e) => c -> Ress i s -> e
+resWX :: (Ord i, Eq c, Monoid c, Monoid e, EffectOrd c e)
+      => c -> Ress i e -> e
 resWX c _ | c == uniC = idE -- optimization case
 resWX c r =
   let f e es = if effectLe c idE e
@@ -143,9 +144,9 @@ instance (Ord i) => Semigroup (Ress i e) where
                 _ -> error "Uh oh."
     in Ress $ foldr f mempty ks
 
-instance (Ord i, CARD s) => Monoid (Ress i s) where
+instance (Ord i) => Monoid (Ress i c) where
   mempty = Ress mempty
 
-instance (Ord i, CARD s, Monad m) => CvRDT r (Ress i s) m where
+instance (Ord i, Ord e, Monad m) => CvRDT r (Ress i e) m where
   cvmerge _ s1 s2 = pure (s1 <> s2)
   cvempty _ = pure mempty

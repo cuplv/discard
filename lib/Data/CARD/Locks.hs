@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -92,12 +91,10 @@ data Locks i c =
   | Tokens { tokens :: Map c (Token i)}
   deriving (Show,Eq,Ord,Generic)
 
--- deriving instance (Show i, Show (Cr s)) => Show (Locks i s)
+instance (ToJSONKey i, ToJSON i, ToJSONKey c, ToJSON c) => ToJSON (Locks i c)
+instance (Ord i, FromJSONKey i, FromJSON i, Ord c, FromJSONKey c, FromJSON c) => FromJSON (Locks i c)
 
-instance (ToJSONKey i, ToJSON i, ToJSONKey c, ToJSON c) => ToJSON (Locks i s)
-instance (Ord i, FromJSONKey i, FromJSON i, Ord c, FromJSONKey c, FromJSON c) => FromJSON (Locks i s)
-
-instance (Ord i, Semigroup c) => Semigroup (Locks i c) where
+instance (Ord i, Ord c, Semigroup c) => Semigroup (Locks i c) where
   (<>) (Locks m1) (Locks m2) =
     Locks $ foldl' (\m k -> case (Map.lookup k m1, Map.lookup k m2) of
       (Just (i1,c1,s1),Just (i2,c2,s2)) -> case compare i1 i2 of
@@ -119,33 +116,33 @@ instance (Ord i, Semigroup c) => Semigroup (Locks i c) where
   (<>) (Tokens ts) _ = Tokens ts
   (<>) _ (Tokens ts) = Tokens ts
 
-instance (Ord i) => Monoid (Locks i c) where
+instance (Ord i, Ord c, Semigroup c) => Monoid (Locks i c) where
   mempty = Locks Map.empty
 
-instance (Ord i, Monad m) => CvRDT r (Locks i c) m where
+instance (Ord i, Ord c, Semigroup c, Monad m) => CvRDT r (Locks i c) m where
   cvmerge _ s1 s2 = pure (s1 <> s2)
   cvempty _ = pure mempty
 
 -- | Create a set of tokens, one for each Conref, which all start out
 -- owned by the given replica id, in an unlocked state.
-initTokens :: (Ord i) => [c] -> i -> Locks i c
+initTokens :: (Ord i, Ord c) => [c] -> i -> Locks i c
 initTokens cs i = Tokens $ Map.fromList (zip cs (repeat $ initToken i))
 
 -- | Create an empty set of shared locks.  This can also be
 -- accomplished by using 'mempty'.
-initLocks :: (Ord i) => Locks i c
+initLocks :: (Ord i, Ord c, Semigroup c) => Locks i c
 initLocks = mempty
 
 -- | Get the current request index for an identity
-reqIndex :: (Ord i, c) => i -> Locks i c -> Int
+reqIndex :: (Ord i) => i -> Locks i c -> Int
 reqIndex i (Locks m) = case Map.lookup i m of
                          Just (n,_,_) -> n
                          Nothing -> 0
 
 -- | Request a new/stronger lock
-request :: (Ord i, c) => i -> c -> Locks i c -> Locks i c
+request :: (Ord i, Ord c, Semigroup c) => i -> c -> Locks i c -> Locks i c
 request i c (Tokens ts) = 
-  Tokens $ foldr (Map.adjust (requestToken i)) ts c
+  Tokens $ Map.adjust (requestToken i) c ts
 request i c m = m <> (Locks $ Map.singleton i (reqIndex i m, c, mempty))
 
 -- | Grant a request
@@ -160,10 +157,10 @@ grant ig ir (Tokens ts) = Tokens $ Map.map f ts
         f (Token n o Nothing rs) | ig == o = passToken (Token n o Nothing rs)
         f t = t
 grant ig ir (Locks m) =
-  Locks $ Map.adjust (\(n,c,s) -> (n,c,Set.insert ig s)
+  Locks $ Map.adjust (\(n,c,s) -> (n,c,Set.insert ig s)) ir m
 
 -- | Release a lock
-release :: (Ord i, Monoid c) => i -> Locks i c -> Locks i c
+release :: (Ord i, Ord c, Monoid c) => i -> Locks i c -> Locks i c
 release i (Tokens ts) = Tokens $ Map.map f ts
   where f t = if tkOwner t == i
                  then passToken t
@@ -171,7 +168,7 @@ release i (Tokens ts) = Tokens $ Map.map f ts
 release i m = m <> (Locks $ Map.singleton i (reqIndex i m + 1, uniC, mempty))
 
 -- | List all requests that 'i' has not granted
-ungranted :: (Ord i) => i -> Locks i c -> [(i,c)]
+ungranted :: (Eq c, Ord i, Monoid c) => i -> Locks i c -> [(i,c)]
 ungranted i (Tokens ts) = Map.foldrWithKey f [] ts
   where f c (Token _ o (Just ss) rs) cs = if Set.member i ss
                                              then cs
@@ -185,7 +182,7 @@ ungranted i (Locks m) = map (\(ir,(_,c,_)) -> (ir,c)) $ filter ug (Map.assocs m)
 
 -- | Check if effect is blocked by current locks, returning the
 -- blocking 'Conref' if so (as compared with consumed effect)
-permitted' :: (Ord i)
+permitted' :: (Ord i, Monoid c, EffectOrd c e)
   => i
   -> e -- ^ The consumed effect
   -> e -- ^ The issued/produced effect
@@ -199,7 +196,7 @@ permitted' i ce ie (Tokens ts) =
       blockers = filter f $ Map.assocs ts
   in case blockers of
        [] -> Right ()
-       bs -> Left (mconcat bs)
+       bs -> Left (mconcat . map fst $ bs)
        -- bs -> Left (fold (map (cr.fst) bs))
 permitted' i ce ie ls =
   let blockers = map (\(_,c,_) -> c)
@@ -213,7 +210,7 @@ permitted' i ce ie ls =
        bs -> Left (mconcat bs)
 
 -- | Check if lock has been requested
-requested :: (Ord i, Monoid c) => i -> c -> Locks i c -> Bool
+requested :: (Ord i, Eq c, Ord c, Monoid c) => i -> c -> Locks i c -> Bool
 requested i c (Tokens ts) = case Map.lookup c ts of
   Just (Token _ o (Just _) _) | i == o -> True
   Just (Token _ o _ rs) | i /= o && Set.member i rs -> True
@@ -225,7 +222,7 @@ requested i c1 (Locks m) = case Map.lookup i m of
                 else False
 
 -- | Check if node 'i' is holding any locks
-holding :: (Ord i, Monoid c) => i -> Locks i c -> Bool
+holding :: (Ord i, Eq c, Monoid c) => i -> Locks i c -> Bool
 holding i (Tokens ts) | holding' i (Tokens ts) == Nothing = False
 holding i (Tokens ts) = True
 holding i (Locks m) = case Map.lookup i m of
@@ -235,18 +232,18 @@ holding i (Locks m) = case Map.lookup i m of
   Nothing -> False
 
 -- | Return exactly the lock that 'i' is holding
-holding' :: (Ord i) => i -> Locks i c -> Maybe c
-holding' i (Tokens ts) = Map.foldrWithKey f crT ts
-  where f c t cs | tkState t /= Nothing && tkOwner t == i =
-                   Just (c <> cs)
-        f _ _ cs = Just cs
+holding' :: (Ord i, Semigroup c) => i -> Locks i c -> Maybe c
+holding' i (Tokens ts) = Map.foldrWithKey f uniC ts
+  where f c t mcs | tkState t /= Nothing && tkOwner t == i =
+                    (c <>) <$> mcs
+        f _ _ mcs = mcs
 holding' i (Locks m) = case Map.lookup i m of
   Just (_,c,_) -> Just c
   Nothing -> Nothing
 
 -- | Check if currently requested lock has been confirmed by all
 -- participating identities
-confirmed :: (Ord i, Monoid c)
+confirmed :: (Eq c, Ord i, Monoid c)
           => i -- ^ Identity to check the requested lock of
           -> [i] -- ^ List of other participating identities
           -> Locks i c

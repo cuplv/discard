@@ -52,31 +52,32 @@ data RateControl g j = RateControl
   , rcGrantQueue :: Queue g
   , rcRetryQueue :: TQueue j }
 
-data RCIndex i s j = RCIndex
+data RCIndex i c j = RCIndex
   { rciSettings :: RCSettings
-  , rciBlocker :: Conref s
-  , rciControl :: RateControl (i, Conref s) j }
+  , rciBlocker :: c
+  , rciControl :: RateControl (i,c) j }
 
 -- | Create a new index
-newRCIndex :: (CARD s) => NominalDiffTime -> IO (RCIndex i s j)
+newRCIndex :: NominalDiffTime -> IO (RCIndex i c j)
 newRCIndex t = do
   rc <- RateControl 1 True Nothing Open [] <$> newTQueueIO
-  return $ RCIndex (RCSettings t) crT rc
+  return $ RCIndex (RCSettings t) uniC rc
 
-getRCBlocker :: (CARD s) => RCIndex i s j -> Conref s
+getRCBlocker :: RCIndex i c j -> c
 getRCBlocker (RCIndex _ cb _) = cb
 
--- | Report a failure.  The 'Conref s' should be the smallest relevant
--- bit of the blocking lock.  The 'j' is the job that will be retried
+-- | Report a failure.  The @c@ should be the smallest relevant
+-- bit of the blocking lock.  The @j@ is the job that will be retried
 -- later.
-reportFailure :: (CARD s) => Conref s -> j -> RCIndex i s j -> IO (RCIndex i s j)
-reportFailure c j (RCIndex st cb rc) = RCIndex st (cb |&| c) <$> reportFailure' st j rc
+reportFailure :: c -> j -> RCIndex i c j -> IO (RCIndex i c j)
+reportFailure c j (RCIndex st cb rc) =
+  RCIndex st (cb <> c) <$> reportFailure' st j rc
 
 
 -- | Report a successful effect emission.
-reportSuccess :: (CARD s) => Effect s -> RCIndex i s j -> IO (RCIndex i s j)
-reportSuccess e (RCIndex st cb rc) = 
-  if checkBlock cb e
+reportSuccess :: (EffectOrd c e) => e -> RCIndex i c j -> IO (RCIndex i c j)
+reportSuccess e (RCIndex st cb rc) =
+  if effectLe cb idE e
      then do putStrLn ""
              putStrLn "(Success, reducing index by 1)"
              putStrLn ""
@@ -84,23 +85,23 @@ reportSuccess e (RCIndex st cb rc) =
      else return $ RCIndex st cb rc
 
 -- | Get a job to retry, if one is ready
-getRetry :: RCIndex i s j -> IO (Maybe (j,RCIndex i s j))
+getRetry :: RCIndex i c j -> IO (Maybe (j,RCIndex i c j))
 getRetry (RCIndex st cb rc) = getRetry' st rc >>= \case
   Just (j,rc') -> return (Just (j, RCIndex st cb rc'))
   Nothing -> return Nothing
 
-enqueGrant :: (Eq i, CARD s) => (i,Conref s) -> RCIndex i s j -> IO (RCIndex i s j)
+enqueGrant :: (Eq i) => (i,c) -> RCIndex i c j -> IO (RCIndex i c j)
 enqueGrant g (RCIndex st cb rc) = do
   RCIndex st cb <$> enqueGrant' st g rc
 
 -- | Get a grant to offer, if one is ready
-getGrant :: RCIndex i s j -> IO (Maybe ((i, Conref s), RCIndex i s j))
+getGrant :: RCIndex i c j -> IO (Maybe ((i,c), RCIndex i c j))
 getGrant (RCIndex st cb rc) = getGrant' st rc >>= \case
   Just (j,rc') -> return (Just (j, RCIndex st cb rc'))
   Nothing -> return Nothing
 
 -- | Wait for one of the gates to open and return the changed index
-awaitTimeouts :: RCIndex i s j -> STM (RCIndex i s j)
+awaitTimeouts :: RCIndex i c j -> STM (RCIndex i c j)
 awaitTimeouts (RCIndex st cb rc) = do
   let grantOpen = RCIndex st cb $ rc { rcGrantGate = Nothing }
       gRead = case rcGrantGate rc of

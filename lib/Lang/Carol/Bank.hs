@@ -3,49 +3,50 @@
 module Lang.Carol.Bank where
 
 import Lang.Carol
+import Data.CARD.Counter
 
-deposit :: Int -> Carol Counter (Either String Int)
+type AccountOp = Carol (CounterC Int) (CounterE Int) Int
+
+deposit :: Int -> AccountOp (Either String Int)
 deposit n = assert (n > 0) "Must deposit at least 1." $ do
-  issue (ef$ Add n)
+  issue (addE n)
   return (Right n)
 
 -- | Deposit n as a reservation.
-depositR :: Int -> Carol Counter (Either String ())
+depositR :: Int -> AccountOp (Either String ())
 depositR n = assert (n > 0) "Must deposit at least 1." $ do
-  issue (ef $ Add n)
-  produce (ef $ Sub n)
+  issue (addE n)
+  produce (subE n)
   return (Right ())
 
-withdraw :: Int -> Carol Counter (Either String Int)
+withdraw :: Int -> AccountOp (Either String Int)
 withdraw n = assert (n > 0) "Must withdraw at least 1." $ do
-  (Counter s) <- query (cr$ LEQ)
+  s <- query lowerBound
   if s >= n
-     then issue (ef$ Sub n) >> return (Right n)
+     then issue (subE n) >> return (Right n)
      else return (Left "Not enough in account.")
 
-withdrawS :: Int -> Carol Counter (Either String Int)
+withdrawS :: Int -> AccountOp (Either String Int)
 withdrawS n = withdraw n >>= \case
   Left "Not enough in account." -> do
-    (Counter s) <- query crEqv
+    s <- query idC
     if s >= n
-       then issue (ef$ Sub n) >> return (Right n)
+       then issue (subE n) >> return (Right n)
        else return (Left "Seriously, not enough in account.")
   other -> return other
 
 -- | Withdraw 1 using a reservation.
-withdrawR :: Carol Counter Int
+withdrawR :: AccountOp Int
 withdrawR = do
-  let e = ef $ Sub 1
+  let e = subE 1
   -- If the consume succeeds, we issue the same effect.  Otherwise, we
   -- issue nothing and return 0.
   consume e >>= \case
     Just _ -> issue e >> return 1
     Nothing -> return 0
 
-current :: Carol Counter Int
-current = do (Counter s) <- query crT
-             return s
+current :: AccountOp Int
+current = query uniC
 
-currentS :: Carol Counter Int
-currentS = do (Counter s) <- query crEqv
-              return s
+currentS :: AccountOp Int
+currentS = query idC

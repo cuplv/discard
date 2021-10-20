@@ -13,6 +13,7 @@ module Data.CARD.Classes
   , Camo (..)
   , uniC
   , idC
+  , impl
   , UniversalC (..)
   , Wrt (..)
   ) where

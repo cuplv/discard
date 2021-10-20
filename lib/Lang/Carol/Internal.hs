@@ -84,17 +84,17 @@ type CarolEnv c e s m
 ----------------------------------------------------------------------
 
 -- | A "carrier" for a specific 'CARD'.
-class (CARD s, Monad m) => CCarrier r c e s m where
+class (Monad m) => CCarrier r c e s m where
   handleQ :: r -> HelpMe c e s (a, Update e) -> m a
   handleQAsync :: r -> HelpMe c e s (a, Update e) -> (a -> m ()) -> m ()
 
 -- | Run a Carol operation using the provided carrier.
-carol :: (CCarrier r c s m) => r -> Carol c e s a -> m a
+carol :: (Monoid e, CCarrier r c e s m) => r -> Carol c e s a -> m a
 carol r t = handleQ r (runCarol' t)
 
 -- | Run a Carol operation in the background, taking a particular
 -- action after it terminates.
-carolAsync :: (CCarrier r c e s m) 
+carolAsync :: (Monoid e, CCarrier r c e s m) 
            => r
            -> Carol c e s a 
            -> (a -> m ()) -- ^ Action to perform after operation
@@ -104,7 +104,7 @@ carolAsync r t fin = handleQAsync r (runCarol' t) fin
 
 -- | Run a Carol operation in the background, with no post-termination
 -- action
-carolAsync' :: (CCarrier r c e s m) => r -> Carol c e s a -> m ()
+carolAsync' :: (Monoid e, CCarrier r c e s m) => r -> Carol c e s a -> m ()
 carolAsync' r t = handleQAsync r (runCarol' t) (const $ return ())
 
 ----------------------------------------------------------------------
@@ -143,14 +143,14 @@ staticApp s = \case
   GiveMe _ f -> staticApp s (f Nothing)
   GotIt a -> a
 
-runCarol :: (Monad m)
+runCarol :: (Monad m, Monoid e)
   => (c -> m s)
   -> (e -> m (Maybe e))
   -> Carol c e s a
   -> m (a, Update e)
 runCarol runq runc t = runStateT (runReaderT (evalCarol t) (runq,runc)) mempty
 
-runCarol' :: Carol c e s a -> HelpMe c e s (a, Update e)
+runCarol' :: (Monoid e) => Carol c e s a -> HelpMe c e s (a, Update e)
 runCarol' = runCarol helpMe giveMe
 
 runQuery :: (Monad m) => c -> CarolEnv c e s m s
@@ -159,7 +159,7 @@ runQuery = (lift.lift =<<) . ((fst <$> ask) <*>) . pure
 runConsume :: (Monad m) => e -> CarolEnv c e s m (Maybe e)
 runConsume = (lift.lift =<<) . ((snd <$> ask) <*>) . pure
 
-evalCarol :: (Monad m) => Carol c e s a -> CarolEnv c e s m a
+evalCarol :: (Monad m, Semigroup e) => Carol c e s a -> CarolEnv c e s m a
 evalCarol = \case
   Pure a -> return a
   Free (Issue e t) -> evalCarol t <* (issued %= (e <>))
@@ -184,5 +184,5 @@ queryT = query uniC
 consume :: e -> Carol c e s (Maybe e)
 consume e = Free (Consume e Pure)
 
-produce :: e -> Carol s e s ()
+produce :: e -> Carol c e s ()
 produce e = Free (Produce e (Pure ()))
