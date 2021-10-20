@@ -44,18 +44,18 @@ instance (Ord k, EffectDom e v) => Monoid (MapE k e v) where
   mempty = MapE Map.empty
 
 instance (Ord k, EffectDom e v) => EffectDom (MapE k e v) (Map k v) where
-  runEffect (MapE es) s =
+  eFun (MapE es) s =
     let f k (ConstE (Just v)) s = Map.insert k v s
         f k (ConstE Nothing) s = Map.delete k s
-        f k (ModifyE (JustE e)) s = Map.adjust (runEffect e) k s
+        f k (ModifyE (JustE e)) s = Map.adjust (eFun e) k s
     in Map.foldrWithKey' f s es
 
 {-| Use a 'MaybeE' effect to set the value of a key in a map.
 
 @
-'runEffect' ('mapE' k ('insertE' v)) = Data.Map.insert k v
-'runEffect' ('mapE' k ('adjustE' e)) = Data.Map.adjust k ('runEffect' e)
-'runEffect' ('mapE' k 'deleteE') = Data.Map.delete k
+'eFun' ('mapE' k ('insertE' v)) = Data.Map.insert k v
+'eFun' ('mapE' k ('adjustE' e)) = Data.Map.adjust k ('eFun' e)
+'eFun' ('mapE' k 'deleteE') = Data.Map.delete k
 'extractEffect' k 'Data.Function..' 'injectEffect' k = 'Data.Function.id'
 @
 -}

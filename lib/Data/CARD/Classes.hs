@@ -20,44 +20,44 @@ import Data.Aeson
 import GHC.Generics
 
 {-| An 'EffectDom' is a domain of effects (@e@) on some state type
-    (@s@), in which each effect denotes (by 'runEffect') a pure
+    (@s@), in which each effect denotes (by 'eFun') a pure
     function on a state value.  The effects must form a
     'Data.Monoid.Monoid' according to the following laws:
 
 @
 \-\- Identity
-'runEffect' 'Data.Monoid.mempty' = 'Data.Function.id'
+'eFun' 'Data.Monoid.mempty' = 'Data.Function.id'
 
 \-\- Composition
-'runEffect' (e2 'Data.Semigroup.<>' e1) = 'runEffect' e2 'Data.Function..' 'runEffect' e1
+'eFun' (e2 'Data.Semigroup.<>' e1) = 'eFun' e2 'Data.Function..' 'eFun' e1
 @
 
     Note that 'Data.Semigroup.<>' composes effects right-to-left, just
     like function composition.
 -}
 class (Monoid e) => EffectDom e s where
-  runEffect :: e -> s -> s
+  eFun :: e -> s -> s
 
 instance EffectDom () s where
-  runEffect () = id
+  eFun () = id
 
 instance
   ( EffectDom e1 s1
   , EffectDom e2 s2 )
   => EffectDom (e1,e2) (s1,s2) where
-  runEffect (e1,e2) (s1,s2) =
-    ( runEffect e1 s1
-    , runEffect e2 s2 )
+  eFun (e1,e2) (s1,s2) =
+    ( eFun e1 s1
+    , eFun e2 s2 )
 
 instance
   ( EffectDom e1 s1
   , EffectDom e2 s2
   , EffectDom e3 s3 )
   => EffectDom (e1,e2,e3) (s1,s2,s3) where
-  runEffect (e1,e2,e3) (s1,s2,s3) =
-    ( runEffect e1 s1
-    , runEffect e2 s2
-    , runEffect e3 s3 )
+  eFun (e1,e2,e3) (s1,s2,s3) =
+    ( eFun e1 s1
+    , eFun e2 s2
+    , eFun e3 s3 )
 
 instance
   ( EffectDom e1 s1
@@ -65,11 +65,11 @@ instance
   , EffectDom e3 s3
   , EffectDom e4 s4 )
   => EffectDom (e1,e2,e3,e4) (s1,s2,s3,s4) where
-  runEffect (e1,e2,e3,e4) (s1,s2,s3,s4) =
-    ( runEffect e1 s1
-    , runEffect e2 s2
-    , runEffect e3 s3
-    , runEffect e4 s4 )
+  eFun (e1,e2,e3,e4) (s1,s2,s3,s4) =
+    ( eFun e1 s1
+    , eFun e2 s2
+    , eFun e3 s3
+    , eFun e4 s4 )
 
 {-| The identity effect, a synonym for 'Data.Monoid.mempty'. -}
 idE :: (Monoid e) => e
@@ -79,13 +79,13 @@ idE = mempty
     replaces the current state with a given value.
 
 @
-'runEffect' ('ConstE' s) = 'Data.Function.const' s = (\\_ -> s)
+'eFun' ('ConstE' s) = 'Data.Function.const' s = (\\_ -> s)
 @
 
     Effects from the wrapped domain can be used with 'ModifyE'.
 
 @
-'runEffect' ('ModifyE' e) s = 'runEffect' e s
+'eFun' ('ModifyE' e) s = 'eFun' e s
 @
 -} 
 data ConstE e s
@@ -100,14 +100,14 @@ instance (FromJSON e, FromJSON s) => FromJSON (ConstE e s)
 instance (EffectDom e s) => Semigroup (ConstE e s) where
   ConstE s <> _ = ConstE s
   ModifyE e2 <> ModifyE e1 = ModifyE (e2 <> e1)
-  ModifyE e <> ConstE s = ConstE (runEffect e s)
+  ModifyE e <> ConstE s = ConstE (eFun e s)
 
 instance (EffectDom e s) => Monoid (ConstE e s) where
   mempty = ModifyE mempty
 
 instance (EffectDom e s) => EffectDom (ConstE e s) s where
-  runEffect (ConstE s) = const s
-  runEffect (ModifyE e) = runEffect e
+  eFun (ConstE s) = const s
+  eFun (ModifyE e) = eFun e
 
 {-| Semigroup with an 'absorb' (or "zero") element following this law:
 

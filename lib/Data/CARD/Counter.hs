@@ -50,15 +50,15 @@ instance (Num n) => Monoid (AddMul n) where
   mempty = AddMul mulId addId
 
 instance (Num n) => EffectDom (AddMul n) n where
-  runEffect (AddMul m a) s = s * m + a
+  eFun (AddMul m a) s = s * m + a
 
 {-| Add @n@ to the state, where @n >= 0@.  A negative @n@ will produce a
   generate a runtime error.
 
 @
-'runEffect' ('addE' 1) 2 = 3
+'eFun' ('addE' 1) 2 = 3
 
-'runEffect' ('addE' 0) = 'Data.Function.id'
+'eFun' ('addE' 0) = 'Data.Function.id'
 @
 -}
 addE :: (Ord n, Num n) => n -> CounterE n
@@ -68,9 +68,9 @@ addE n | n >= 0 = ModifyE (AddMul mulId n)
 {-| Subtract @n@ from the state, where @n >= 0@.
 
 @
-'runEffect' ('subE' 1) 3 = 2
+'eFun' ('subE' 1) 3 = 2
 
-'runEffect' ('subE' 0) = 'Data.Function.id'
+'eFun' ('subE' 0) = 'Data.Function.id'
 @
 -}
 subE :: (Ord n, Num n) => n -> CounterE n
@@ -80,9 +80,9 @@ subE n | n >= 0 = ModifyE (AddMul mulId (-n))
 {-| Multiply the state by @n@, where @n >= 0@.
 
 @
-'runEffect' ('mulE' 2) 3 = 6
+'eFun' ('mulE' 2) 3 = 6
 
-'runEffect' ('mulE' 1) = 'Data.Function.id'
+'eFun' ('mulE' 1) = 'Data.Function.id'
 @
 -}
 mulE :: (Ord n, Num n) => n -> CounterE n

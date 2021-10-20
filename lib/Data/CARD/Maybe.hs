@@ -42,8 +42,8 @@ instance (Monoid e) => Monoid (JustE e) where
   mempty = JustE mempty
 
 instance (EffectDom e s) => EffectDom (JustE e) (Maybe s) where
-  runEffect (JustE e) (Just s) = Just (runEffect e s)
-  runEffect _ s = s
+  eFun (JustE e) (Just s) = Just (eFun e s)
+  eFun _ s = s
 
 {-| Set the state to @'Data.Maybe.Just' v@. -}
 insertE :: v -> MaybeE e v
@@ -75,8 +75,8 @@ instance
   ( EffectDom e1 s1
   , EffectDom e2 s2 )
   => EffectDom (LeftRightE e1 e2) (Either s1 s2) where
-  runEffect (LeftRightE e _) (Left s) = Left (runEffect e s)
-  runEffect (LeftRightE _ e) (Right s) = Right (runEffect e s)
+  eFun (LeftRightE e _) (Left s) = Left (eFun e s)
+  eFun (LeftRightE _ e) (Right s) = Right (eFun e s)
 
 setLeftE :: s1 -> EitherE e1 e2 s1 s2
 setLeftE = ConstE . Left
