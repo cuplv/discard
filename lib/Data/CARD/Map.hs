@@ -14,6 +14,7 @@ module Data.CARD.Map
   , fromKeyC
   ) where
 
+import Data.Aeson
 import Data.Map (Map)
 import qualified Data.Map as Map
 import GHC.Generics
@@ -31,6 +32,10 @@ data MapE k e v
 -- MapE can't simply be a type alias for Map, since Map already has a
 -- Monoid instance which overwrites same-key entries rather than
 -- monoidally combining them like we want to.
+
+instance (ToJSON k, ToJSONKey k, ToJSON e, ToJSON v) => ToJSON (MapE k e v) where
+  toEncoding = genericToEncoding defaultOptions
+instance (Ord k, FromJSON k, FromJSONKey k, FromJSON e, FromJSON v) => FromJSON (MapE k e v)
 
 instance (Ord k, EffectDom e v) => Semigroup (MapE k e v) where
   MapE a2 <> MapE a1 = MapE $ Map.unionWith (<>) a2 a1
@@ -83,6 +88,10 @@ data MapC k c
          , perKey :: Map k (MaybeC c)
          }
   deriving (Show,Eq,Ord,Generic)
+
+instance (ToJSON k, ToJSONKey k, ToJSON c) => ToJSON (MapC k c) where
+  toEncoding = genericToEncoding defaultOptions
+instance (Ord k, FromJSON k, FromJSONKey k, FromJSON c) => FromJSON (MapC k c)
 
 instance (Ord k, Semigroup c) => Semigroup (MapC k c) where
   MapC a1 p1 <> MapC a2 p2 =

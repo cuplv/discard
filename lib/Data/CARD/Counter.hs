@@ -15,6 +15,7 @@ module Data.CARD.Counter
   , upperBound
   ) where
 
+import Data.Aeson
 import GHC.Generics
 
 import Data.CARD.Classes
@@ -29,6 +30,10 @@ data AddMul n
            , addAmt :: n
            }
   deriving (Show,Eq,Ord,Generic)
+
+instance (ToJSON n) => ToJSON (AddMul n) where
+  toEncoding = genericToEncoding defaultOptions
+instance (FromJSON n) => FromJSON (AddMul n)
 
 instance (Num n) => Semigroup (AddMul n) where
   AddMul m2 a2 <> AddMul m1 a1 =
@@ -102,6 +107,11 @@ data Bounds
   = LowerBound
   | UpperBound
   | ExactValue
+  deriving (Show,Eq,Ord,Generic)
+
+instance ToJSON Bounds where
+  toEncoding = genericToEncoding defaultOptions
+instance FromJSON Bounds
 
 instance Semigroup Bounds where
   ExactValue <> _ = ExactValue

@@ -31,6 +31,10 @@ type MaybeE e s = ConstE (JustE e) (Maybe s)
 
 newtype JustE e = JustE e deriving (Show,Eq,Ord,Generic)
 
+instance (ToJSON e) => ToJSON (JustE e) where
+  toEncoding = genericToEncoding defaultOptions
+instance (FromJSON e) => FromJSON (JustE e)
+
 instance (Semigroup e) => Semigroup (JustE e) where
   JustE e1 <> JustE e2 = JustE (e1 <> e2)
 
@@ -56,6 +60,10 @@ type EitherE e1 e2 s1 s2 = ConstE (LeftRightE e1 e2) (Either s1 s2)
 data LeftRightE e1 e2
   = LeftRightE e1 e2
   deriving (Show,Eq,Ord,Generic)
+
+instance (ToJSON e1, ToJSON e2) => ToJSON (LeftRightE e1 e2) where
+  toEncoding = genericToEncoding defaultOptions
+instance (FromJSON e1, FromJSON e2) => FromJSON (LeftRightE e1 e2)
 
 instance (Semigroup e1, Semigroup e2) => Semigroup (LeftRightE e1 e2) where
   LeftRightE e1 e2 <> LeftRightE f1 f2 = LeftRightE (e1 <> f1) (e2 <> f2)
@@ -86,6 +94,10 @@ data MaybeC c
   = MaybeC (Maybe ()) (Maybe c)
   deriving (Show,Eq,Ord,Generic)
 
+instance (ToJSON c) => ToJSON (MaybeC c) where
+  toEncoding = genericToEncoding defaultOptions
+instance (FromJSON c) => FromJSON (MaybeC c)
+
 instance (Semigroup c) => Semigroup (MaybeC c) where
   MaybeC n1 m1 <> MaybeC n2 m2 = MaybeC (n1 <> n2) (m1 <> m2)
 
@@ -114,7 +126,13 @@ nothingC = MaybeC (Just ()) Nothing
 justC :: c -> MaybeC c
 justC c = MaybeC Nothing (Just c)
 
-data EitherC c1 c2 = EitherC (Maybe c1) (Maybe c2)
+data EitherC c1 c2 
+  = EitherC (Maybe c1) (Maybe c2)
+  deriving (Show,Eq,Ord,Generic)
+
+instance (ToJSON e1, ToJSON e2) => ToJSON (EitherC e1 e2) where
+  toEncoding = genericToEncoding defaultOptions
+instance (FromJSON e1, FromJSON e2) => FromJSON (EitherC e1 e2)
 
 instance (Semigroup c1, Semigroup c2) => Semigroup (EitherC c1 c2) where
   EitherC c1 c2 <> EitherC d1 d2 = EitherC (c1 <> d1) (c2 <> d2)

@@ -93,6 +93,10 @@ data ConstE e s
   | ModifyE e
   deriving (Show,Eq,Ord,Generic)
 
+instance (ToJSON e, ToJSON s) => ToJSON (ConstE e s) where
+  toEncoding = genericToEncoding defaultOptions
+instance (FromJSON e, FromJSON s) => FromJSON (ConstE e s)
+
 instance (EffectDom e s) => Semigroup (ConstE e s) where
   ConstE s <> _ = ConstE s
   ModifyE e2 <> ModifyE e1 = ModifyE (e2 <> e1)
