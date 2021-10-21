@@ -90,41 +90,43 @@ onLeftE e = ModifyE (LeftRightE e idE)
 onRightE :: (Monoid e1) => e2 -> EitherE e1 e2 s1 s2
 onRightE e = ModifyE (LeftRightE idE e)
 
-data MaybeC c
-  = MaybeC (Maybe ()) (Maybe c)
+data JustC c
+  = JustC (Maybe ()) (Maybe c)
   deriving (Show,Eq,Ord,Generic)
 
-instance (ToJSON c) => ToJSON (MaybeC c) where
+instance (ToJSON c) => ToJSON (JustC c) where
   toEncoding = genericToEncoding defaultOptions
-instance (FromJSON c) => FromJSON (MaybeC c)
+instance (FromJSON c) => FromJSON (JustC c)
 
-instance (Semigroup c) => Semigroup (MaybeC c) where
-  MaybeC n1 m1 <> MaybeC n2 m2 = MaybeC (n1 <> n2) (m1 <> m2)
+instance (Semigroup c) => Semigroup (JustC c) where
+  JustC n1 m1 <> JustC n2 m2 = JustC (n1 <> n2) (m1 <> m2)
 
-instance (Monoid c) => Monoid (MaybeC c) where
-  mempty = MaybeC mempty mempty
+instance (Monoid c) => Monoid (JustC c) where
+  mempty = JustC mempty mempty
 
-instance (Absorbing c) => Absorbing (MaybeC c) where
-  absorb = MaybeC absorb absorb
+instance (Absorbing c) => Absorbing (JustC c) where
+  absorb = JustC absorb absorb
 
-instance (StateOrd c s) => StateOrd (MaybeC c) (Maybe s) where
-  stateLe (MaybeC (Just _) _) Nothing (Just _) = False
-  stateLe (MaybeC _ (Just _)) (Just _) Nothing = False
-  stateLe (MaybeC _ (Just c)) (Just s1) (Just s2) =
+instance (StateOrd c s) => StateOrd (JustC c) (Maybe s) where
+  stateLe (JustC (Just _) _) Nothing (Just _) = False
+  stateLe (JustC _ (Just _)) (Just _) Nothing = False
+  stateLe (JustC _ (Just c)) (Just s1) (Just s2) =
     stateLe c s1 s2
   stateLe _ _ _ = True
 
-instance (EffectOrd c e) => EffectOrd (MaybeC c) (JustE e) where
-  effectLe (MaybeC _ (Just c)) (JustE e1) (JustE e2) = effectLe c e1 e2
+instance (EffectOrd c e) => EffectOrd (JustC c) (JustE e) where
+  effectLe (JustC _ (Just c)) (JustE e1) (JustE e2) = effectLe c e1 e2
   effectLe _ _ _ = True
 
-instance (Camo c e s) => Camo (MaybeC c) (JustE e) (Maybe s)
+instance (Camo c e s) => Camo (JustC c) (JustE e) (Maybe s)
+
+type MaybeC c = ConstC (JustC c)
 
 nothingC :: MaybeC c
-nothingC = MaybeC (Just ()) Nothing
+nothingC = ConstC $ JustC (Just ()) Nothing
 
 justC :: c -> MaybeC c
-justC c = MaybeC Nothing (Just c)
+justC c = ConstC $ JustC Nothing (Just c)
 
 data EitherC c1 c2 
   = EitherC (Maybe c1) (Maybe c2)

@@ -20,13 +20,14 @@ import qualified Brick.Widgets.Edit as E
 import Lens.Micro.Platform
 
 import Data.CARD
+import Data.CARD.Counter
 import Data.CARD.Store
 import Lang.Carol
 import Lang.Carol.Bank
 
-type Ress' = Ress String Counter
+type Ress' = Ress String (CounterE Int)
 
-data CustomEvent = StoreUpdate (Counter,Ress') | GotMessage deriving Show
+data CustomEvent = StoreUpdate (Int,Ress') | GotMessage deriving Show
 
 data CommandForm = CommandForm { _cfCommand :: Text.Text } deriving Show
 
@@ -55,14 +56,14 @@ draw i (ns,(Counter b,r),f) =
         resStore = Brick.str $ "Res: " <> prettyRes (resLookup i r)
 
 prettyRes :: [Effect Counter] -> String
-prettyRes ((Effect [Add n]) :es) = "+" ++ show n ++ " " ++ prettyRes es
-prettyRes ((Effect [Sub n]) :es) = "-" ++ show n ++ " " ++ prettyRes es
+prettyRes (EModify e : es) = "+/- " ++ show (addAmt e) ++ " " ++ prettyRes es
+-- prettyRes ((Effect [Sub n]) :es) = "-" ++ show n ++ " " ++ prettyRes es
 prettyRes (e:es) = show e ++ " " ++ prettyRes es
 prettyRes [] = ""
 
 thd (_,_,a) = a
 
-app :: (CCarrier c Counter IO) 
+app :: (CCarrier c (CounterC Int) (CounterE Int) Int IO) 
     => String
     -> c
     -> App (St CustomEvent) CustomEvent Name
@@ -104,12 +105,12 @@ theMap = attrMap V.defAttr
   , (invalidFormInputAttr, V.white `on` V.red)
   , (focusedFormInputAttr, V.black `on` V.yellow) ]
 
-mkUpdateChan :: IO (BChan CustomEvent, (Counter,Ress') -> IO (), IO ())
+mkUpdateChan :: IO (BChan CustomEvent, (Int,Ress') -> IO (), IO ())
 mkUpdateChan = do
   chan <- newBChan 100
   return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
 
-runUi :: (CCarrier c Counter IO) => String -> Counter -> c -> BChan CustomEvent -> IO ()
+runUi :: (CCarrier c (CounterC Int) (CounterE Int) Int IO) => String -> Int -> c -> BChan CustomEvent -> IO ()
 runUi nodeId s0 conn chan = do
   let buildVty = do
         v <- V.mkVty =<< V.standardIOConfig

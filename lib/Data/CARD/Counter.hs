@@ -10,6 +10,8 @@ module Data.CARD.Counter
   , addE
   , subE
   , mulE
+  , addAmt
+  , mulAmt
   , CounterC
   , lowerBound
   , upperBound
@@ -48,6 +50,19 @@ addId = 0
 
 instance (Num n) => Monoid (AddMul n) where
   mempty = AddMul mulId addId
+
+instance (Ord n, Num n) => EffectSlice (AddMul n) where
+  effectSlice (AddMul m1 a1) (AddMul m2 a2) 
+    | m1 == mulId && m2 == mulId
+      && ((a1 >= 0 && a1 <= a2)
+          || (a1 <= 0 && a1 >= a2)) = Just (AddMul m1 a1,AddMul m2 (a2 - a1))
+    | otherwise = Nothing
+  effectMerge (AddMul m1 a1) (AddMul m2 a2)
+    | m1 == mulId && m2 == mulId
+      && ((a1 >= 0 && a2 >= 0) 
+          || (a1 <= 0 && a2 <= 0)) = Just (AddMul m1 (a1 + a2))
+    | otherwise = Nothing
+
 
 instance (Num n) => EffectDom (AddMul n) n where
   eFun (AddMul m a) s = s * m + a
@@ -111,7 +126,9 @@ data Bounds
 
 instance ToJSON Bounds where
   toEncoding = genericToEncoding defaultOptions
+instance ToJSONKey Bounds
 instance FromJSON Bounds
+instance FromJSONKey Bounds
 
 instance Semigroup Bounds where
   ExactValue <> _ = ExactValue
@@ -136,10 +153,10 @@ instance (Num n, Ord n) => EffectOrd Bounds (AddMul n) where
 
 instance (Num n, Ord n) => Camo Bounds (AddMul n) n
 
-type CounterC n = UniversalC Bounds
+type CounterC n = UniversalC (ConstC Bounds)
 
 lowerBound :: CounterC n
-lowerBound = RelateC LowerBound
+lowerBound = RelateC . ConstC $ LowerBound
 
 upperBound :: CounterC n
-upperBound = RelateC UpperBound
+upperBound = RelateC . ConstC $ UpperBound

@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 
@@ -16,23 +17,28 @@ module Data.CARD.Classes
   , uniC
   , idC
   , impl
+  , ConstC (..)
   , UniversalC (..)
   ) where
 
 import Data.Aeson
 import GHC.Generics
 
-class EffectSlice e where
+class (Eq e, Monoid e) => EffectSlice e where
   -- "camoslice _ e1 e2" tries to extract an effect equivalent to e1
   -- from e2.  If successful, it returns Just (e1',e2'), where e1' is
   -- the extracted effect (not necessarily identical to e1) and e2' is
   -- the remainder.
   effectSlice :: e -> e -> Maybe (e,e)
-  effectSlice _ _ = Nothing
+  effectSlice e1 e2 | e1 == idE = Just (e1,e2)
+                    | e1 == e2 = Just (e2,idE)
+                    | otherwise = Nothing
   -- "camoMerge _ e1 e2" tries to merge the effects.  If successful,
   -- it returns Just e3, where e3 is the merged effect.
   effectMerge :: e -> e -> Maybe e
-  effectMerge _ _ = Nothing
+  effectMerge e1 e2 | e1 == idE = Just e2
+                    | e2 == idE = Just e1
+                    | otherwise = Nothing
 
   effectPartition :: Int -> e -> [e]
   effectPartition _ e = [e]
@@ -123,6 +129,16 @@ instance (EffectDom e s) => Semigroup (ConstE e s) where
 instance (EffectDom e s) => Monoid (ConstE e s) where
   mempty = ModifyE mempty
 
+instance (Eq s, EffectSlice e, EffectDom e s) => EffectSlice (ConstE e s) where
+  effectSlice (ConstE s1) (ConstE s2) | s1 == s2 = Just (ConstE s1,idE)
+  effectSlice (ModifyE e1) (ModifyE e2) = case effectSlice e1 e2 of
+    Just (e1',e2') -> Just (ModifyE e1', ModifyE e2')
+    Nothing -> Nothing
+  effectSlice _ _ = Nothing
+  effectMerge (ConstE s1) (ConstE s2) | s1 == s2 = Just (ConstE s1)
+  effectMerge (ModifyE e1) (ModifyE e2) = ModifyE <$> effectMerge e1 e2
+  effectMerge _ _ = Nothing
+
 instance (EffectDom e s) => EffectDom (ConstE e s) s where
   eFun (ConstE s) = const s
   eFun (ModifyE e) = eFun e
@@ -191,13 +207,25 @@ uniC = mempty
 -- Unless it makes sense to state the reduced set of blocked effects
 -- as a Camo instead?
 
-instance (StateOrd c s, EffectOrd c e) => EffectOrd c (ConstE e s) where
-  effectLe c (ConstE s1) (ConstE s2) = stateLe c s1 s2
-  effectLe c _ (ConstE s) = stateTop c s
-  effectLe c (ModifyE e1) (ModifyE e2) = effectLe c e1 e2
+newtype ConstC c = ConstC c
+  deriving (Show,Eq,Ord,Generic,Semigroup,Monoid,Absorbing)
 
-instance (EffectDom e s, StateOrd c s, EffectOrd c e)
-  => Camo c (ConstE e s) s
+instance (ToJSON c) => ToJSON (ConstC c)
+instance (ToJSON c, ToJSONKey c) => ToJSONKey (ConstC c)
+instance (FromJSON c) => FromJSON (ConstC c)
+instance (FromJSON c, FromJSONKey c) => FromJSONKey (ConstC c)
+
+instance (StateOrd c s) => StateOrd (ConstC c) s where
+  stateLe (ConstC c) = stateLe c
+
+instance (StateOrd c s, EffectOrd c e)
+  => EffectOrd (ConstC c) (ConstE e s) where
+  effectLe (ConstC c) (ConstE s1) (ConstE s2) = stateLe c s1 s2
+  effectLe (ConstC c) _ (ConstE s) = stateTop c s
+  effectLe (ConstC c) (ModifyE e1) (ModifyE e2) = effectLe c e1 e2
+
+-- instance (EffectDom e s, StateOrd c s, EffectOrd c e)
+--   => Camo c (ConstE e s) s
 
 instance (Eq s) => StateOrd () s where
   stateLe _ s1 s2 = s1 == s2
@@ -255,6 +283,13 @@ data UniversalC c
   = UniversalC
   | RelateC c
   deriving (Show,Eq,Ord,Generic)
+
+
+instance (ToJSON c) => ToJSON (UniversalC c) where
+  toEncoding = genericToEncoding defaultOptions
+instance (ToJSON c, ToJSONKey c) => ToJSONKey (UniversalC c)
+instance (FromJSON c) => FromJSON (UniversalC c)
+instance (FromJSON c, FromJSONKey c) => FromJSONKey (UniversalC c)
 
 instance (Semigroup c) => Semigroup (UniversalC c) where
   UniversalC <> c = c

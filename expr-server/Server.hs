@@ -21,6 +21,7 @@ import Data.List (genericLength)
 import Data.Foldable (foldl')
 
 import Lang.Carol
+import Data.CARD.Counter
 import Lang.Carol.Bank
 import Lang.Carol.Warehouse
 
@@ -76,31 +77,35 @@ experimentNode conf = do
   let sets = setHost "!6" . setPort (serverPort conf) $ defaultSettings
   runSettings sets 
               (cmdGetter (serverId conf) 
-                         (startExp (serverId conf) (localAddr conf) (baseTimeout conf) lastv resultsv) 
+                         (startExp (serverId conf) (localAddr conf) (baseTimeout conf) [lowerBound,upperBound] lastv resultsv) 
                          (resultsExp resultsv))
 
 startExp :: String -- ^ Node name
          -> String -- ^ IPFS API address
          -> Int -- ^ Base timeout (microseconds)
+         -> [CounterC Int]
          -> TVar (Maybe Int)
          -> TVar (Map Int (Either ExpResult Exp2Result)) 
          -> (Either ExpConf Exp2Conf, NetConf String) 
          -> IO (Maybe Int)
-startExp i ipfsAddr tsize lastv resultsv (ec,nc) = do
+startExp i ipfsAddr tsize tks lastv resultsv (ec,nc) = do
   mcurrent <- atomically (readTVar lastv) >>= \case
     Nothing -> return (Just 0)
     Just last -> (Map.lookup last <$> readTVarIO resultsv) >>= \case
       Nothing -> return Nothing
       Just _ -> return (Just (last + 1))
-  let settings = defaultDManagerSettings { timeoutUnitSize = tsize
-                                         , setBatchSize = getBatchSize ec
-                                         , baseStoreValue = Counter 0 }
+  let settings = (defaultDManagerSettings' 0) { timeoutUnitSize = tsize
+                                              , setBatchSize = getBatchSize ec
+                                              }
+      tokens = if getUseTokens ec
+                  then Just tks
+                  else Nothing
   case mcurrent of
     Just current -> do
       atomically $ swapTVar lastv (Just current)
       -- Start the experiment
       forkIO $ do 
-        results <- runNode i (getUseTokens ec) ipfsAddr nc settings (expScript' ec)
+        results <- runNode i tokens ipfsAddr nc settings (expScript' ec)
         atomically $ modifyTVar resultsv (Map.insert current results)
         putStrLn $ "Finished experiment " ++ show current
       putStrLn $ "Started experiment " ++ show current
@@ -119,7 +124,7 @@ startExp i ipfsAddr tsize lastv resultsv (ec,nc) = do
 
 
 
-bankProfile :: Profile Counter
+bankProfile :: Profile (CounterC Int) (CounterE Int) Int
 bankProfile = \case
   "deposit" -> deposit 10 >> return ()
   "withdraw" -> withdraw 1 >> return ()
@@ -148,7 +153,7 @@ timeConv = fromRational.toRational
 expScript' (Left e1c) = expScript e1c
 expScript' (Right e2c) = exp2Script e2c
 
-exp2Script :: Exp2Conf -> Script (IpfsEG i) c String Counter (Either a Exp2Result)
+exp2Script :: Exp2Conf -> Script (IpfsEG i) c String (CounterC Int) (CounterE Int) Int (Either a Exp2Result)
 exp2Script econf i man = do
   sales <- newTVarIO 0 :: IO (TVar Int)
   threadDelay (oneSec * 3) -- Wait 3s to make sure everyone is listening
@@ -156,9 +161,9 @@ exp2Script econf i man = do
   startTime <- getCurrentTime
   let (sell,restock) = 
         if e2UseReservations econf
-           then (sellR, whenBelow (Counter $ e2WarehouseSize econf `div` 2)
+           then (sellR, whenBelow (e2WarehouseSize econf `div` 2)
                                   (restockQR (e2WarehouseSize econf)))
-           else (sellQ, whenBelow (Counter $ e2WarehouseSize econf `div` 2)
+           else (sellQ, whenBelow (e2WarehouseSize econf `div` 2)
                                   (restockQQ (e2WarehouseSize econf)))
       rc (n:ns) = do
         carolAsync man sell (\b -> if b
@@ -182,14 +187,14 @@ exp2Script econf i man = do
   threadDelay (oneSec * 10) -- Wait 10s to let everyone finish
   Right . Exp2Result <$> readTVarIO sales
 
-expScript :: ExpConf -> Script (IpfsEG i) c String Counter (Either ExpResult a)
+expScript :: ExpConf -> Script (IpfsEG i) c String (CounterC Int) (CounterE Int) Int (Either ExpResult a)
 expScript econf i man = do
   startQ <- newTQueueIO :: IO (TQueue ((Int,String),UTCTime))
   endQ <- newTQueueIO :: IO (TQueue (Int,UTCTime))
   reqs <- zip [0..]
           . map (chooseOp bankProfile (expMix econf))
           . randomRs (1,100) 
-          <$> getStdGen :: IO [(Int,(String,Carol Counter ()))]
+          <$> getStdGen :: IO [(Int,(String,Carol (CounterC Int) (CounterE Int) Int ()))]
   let mkRequest (n,(s,t)) = stamp (n,s) startQ >> carolAsync man t (const $ stamp n endQ)
       rc startTime (r:rs) = do 
         mkRequest r
