@@ -40,10 +40,10 @@ data Name = CommandField deriving (Show,Read,Eq,Ord)
 mkForm :: CommandForm -> Form CommandForm e Name
 mkForm = newForm [ editTextField cfCommand CommandField (Just 1) ]
 
-type St e = (NetStat, (Counter,Ress'), Form CommandForm e Name)
+type St e = (NetStat, (Int,Ress'), Form CommandForm e Name)
 
 draw :: String -> St e -> [Widget Name]
-draw i (ns,(Counter b,r),f) = 
+draw i (ns,(b,r),f) = 
   [C.vCenter $ 
    C.hCenter (Brick.str $ "[ node " ++ i ++ " ]")
    <=> C.hCenter form
@@ -55,8 +55,8 @@ draw i (ns,(Counter b,r),f) =
         status = Brick.str $ "Network status: " <> (show ns)
         resStore = Brick.str $ "Res: " <> prettyRes (resLookup i r)
 
-prettyRes :: [Effect Counter] -> String
-prettyRes (EModify e : es) = "+/- " ++ show (addAmt e) ++ " " ++ prettyRes es
+prettyRes :: [CounterE Int] -> String
+prettyRes (ModifyE e : es) = "+/- " ++ show (addAmt e) ++ " " ++ prettyRes es
 -- prettyRes ((Effect [Sub n]) :es) = "-" ++ show n ++ " " ++ prettyRes es
 prettyRes (e:es) = show e ++ " " ++ prettyRes es
 prettyRes [] = ""
@@ -81,7 +81,7 @@ app i cc = App
             carolAsync' cc $ withdraw (read . Text.unpack $ v)
             return (ns,(c,r),mkForm $ CommandForm "")
           ["audit"] -> do c' <- carol cc currentS
-                          return (ns,(Counter c',r),mkForm $ CommandForm "")
+                          return (ns,(c',r),mkForm $ CommandForm "")
           ["prod",v] -> do
             carolAsync' cc $ depositR (read . Text.unpack $ v)
             return (ns,(c,r),mkForm $ CommandForm "")
