@@ -26,6 +26,7 @@ import Data.Aeson
 import GHC.Generics
 
 import Data.CARD.Classes
+import Data.CARD.Const
 
 type MaybeE e s = ConstE (JustE e) (Maybe s)
 

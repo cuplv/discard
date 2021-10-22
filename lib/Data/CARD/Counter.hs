@@ -21,6 +21,7 @@ import Data.Aeson
 import GHC.Generics
 
 import Data.CARD.Classes
+import Data.CARD.Const
 
 {-| 'CounterE' provides addition, subtraction, and (positive)
   multiplication effects on 'Num' values.

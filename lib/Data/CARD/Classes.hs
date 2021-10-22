@@ -4,12 +4,12 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Data.CARD.Classes
   ( EffectDom (..)
   , EffectSlice (..)
   , idE
-  , ConstE (..)
   , Absorbing (..)
   , StateOrd (..)
   , EffectOrd (..)
@@ -17,8 +17,8 @@ module Data.CARD.Classes
   , uniC
   , idC
   , impl
-  , ConstC (..)
   , UniversalC (..)
+  , Slice (..)
   ) where
 
 import Data.Aeson
@@ -99,49 +99,6 @@ instance
 idE :: (Monoid e) => e
 idE = mempty
 
-{-| t'ConstE' wraps an effect domain (@e@), adding an effect that
-    replaces the current state with a given value.
-
-@
-'eFun' ('ConstE' s) = 'Data.Function.const' s = (\\_ -> s)
-@
-
-    Effects from the wrapped domain can be used with 'ModifyE'.
-
-@
-'eFun' ('ModifyE' e) s = 'eFun' e s
-@
--} 
-data ConstE e s
-  = ConstE s
-  | ModifyE e
-  deriving (Show,Eq,Ord,Generic)
-
-instance (ToJSON e, ToJSON s) => ToJSON (ConstE e s) where
-  toEncoding = genericToEncoding defaultOptions
-instance (FromJSON e, FromJSON s) => FromJSON (ConstE e s)
-
-instance (EffectDom e s) => Semigroup (ConstE e s) where
-  ConstE s <> _ = ConstE s
-  ModifyE e2 <> ModifyE e1 = ModifyE (e2 <> e1)
-  ModifyE e <> ConstE s = ConstE (eFun e s)
-
-instance (EffectDom e s) => Monoid (ConstE e s) where
-  mempty = ModifyE mempty
-
-instance (Eq s, EffectSlice e, EffectDom e s) => EffectSlice (ConstE e s) where
-  effectSlice (ConstE s1) (ConstE s2) | s1 == s2 = Just (ConstE s1,idE)
-  effectSlice (ModifyE e1) (ModifyE e2) = case effectSlice e1 e2 of
-    Just (e1',e2') -> Just (ModifyE e1', ModifyE e2')
-    Nothing -> Nothing
-  effectSlice _ _ = Nothing
-  effectMerge (ConstE s1) (ConstE s2) | s1 == s2 = Just (ConstE s1)
-  effectMerge (ModifyE e1) (ModifyE e2) = ModifyE <$> effectMerge e1 e2
-  effectMerge _ _ = Nothing
-
-instance (EffectDom e s) => EffectDom (ConstE e s) s where
-  eFun (ConstE s) = const s
-  eFun (ModifyE e) = eFun e
 
 {-| Semigroup with an 'absorb' (or "zero") element following this law:
 
@@ -187,11 +144,39 @@ class StateOrd c s where
   stateTop :: c -> s -> Bool
   stateTop _ _ = False
 
-class EffectOrd c e where
-  -- Preorder on effects.
-  effectLe :: c -> e -> e -> Bool
+{-| There are some laws.
 
-class (EffectDom e s, StateOrd c s, EffectOrd c e) => Camo c e s
+@
+effectLe (intoCap e) idE e = True
+
+effectLe c1 idE e = True
+and
+c1 <> intoCap e = intoCap e
+implies
+c1 = intoCap e
+@
+-}
+class EffectOrd c where
+  type Ef c
+  -- Preorder on effects.
+  effectLe :: c -> Ef c -> Ef c -> Bool
+  intoCap :: Ef c -> c
+
+{-| Slicing is related to the 'Semigroup' implementation by the following  
+    law:
+
+@
+slice a1 a2 = Just a3
+iff
+a1 = a1 <> a2 = a2 <> a3
+@
+-}
+class (Eq a, Semigroup a) => Slice a where
+  slice :: a -> a -> Maybe a
+  slice a1 a2 | a1 == a2 = Just a1
+              | otherwise = Nothing
+
+class (EffectDom e s, StateOrd c s, EffectOrd c, Ef c ~ e) => Camo c e s
 
 {-| The identity relation, a synonym for 'absorb'. -}
 idC :: (Absorbing c) => c
@@ -207,33 +192,20 @@ uniC = mempty
 -- Unless it makes sense to state the reduced set of blocked effects
 -- as a Camo instead?
 
-newtype ConstC c = ConstC c
-  deriving (Show,Eq,Ord,Generic,Semigroup,Monoid,Absorbing)
-
-instance (ToJSON c) => ToJSON (ConstC c)
-instance (ToJSON c, ToJSONKey c) => ToJSONKey (ConstC c)
-instance (FromJSON c) => FromJSON (ConstC c)
-instance (FromJSON c, FromJSONKey c) => FromJSONKey (ConstC c)
-
-instance (StateOrd c s) => StateOrd (ConstC c) s where
-  stateLe (ConstC c) = stateLe c
-
-instance (StateOrd c s, EffectOrd c e)
-  => EffectOrd (ConstC c) (ConstE e s) where
-  effectLe (ConstC c) (ConstE s1) (ConstE s2) = stateLe c s1 s2
-  effectLe (ConstC c) _ (ConstE s) = stateTop c s
-  effectLe (ConstC c) (ModifyE e1) (ModifyE e2) = effectLe c e1 e2
-
 -- instance (EffectDom e s, StateOrd c s, EffectOrd c e)
 --   => Camo c (ConstE e s) s
+
+instance Slice ()
 
 instance (Eq s) => StateOrd () s where
   stateLe _ s1 s2 = s1 == s2
 
-instance (Eq e, Monoid e) => EffectOrd () e where
-  effectLe _ e1 e2 = e1 == e2
+instance EffectOrd () where
+  type Ef () = ()
+  effectLe () () () = True
+  intoCap () = ()
 
-instance (Eq e, Monoid e, Eq s, EffectDom e s) => Camo () e s
+instance (Eq s) => Camo () () s
 
 instance (StateOrd c1 s1, StateOrd c2 s2) => StateOrd (c1,c2) (s1,s2) where
   stateLe (c1,c2) (a1,a2) (b1,b2) =
@@ -253,29 +225,30 @@ instance (StateOrd c1 s1, StateOrd c2 s2, StateOrd c3 s3, StateOrd c4 s4) => Sta
     && stateLe c3 a3 b3
     && stateLe c4 a4 b4
 
-instance (EffectOrd c1 s1, EffectOrd c2 s2) => EffectOrd (c1,c2) (s1,s2) where
+instance (EffectOrd c1, EffectOrd c2) => EffectOrd (c1,c2) where
+  type Ef (c1,c2) = (Ef c1, Ef c2)
   effectLe (c1,c2) (a1,a2) (b1,b2) =
     effectLe c1 a1 b1
     && effectLe c2 a2 b2
 
-instance (EffectOrd c1 s1, EffectOrd c2 s2, EffectOrd c3 s3) => EffectOrd (c1,c2,c3) (s1,s2,s3) where
-  effectLe (c1,c2,c3) (a1,a2,a3) (b1,b2,b3) =
-    effectLe c1 a1 b1
-    && effectLe c2 a2 b2
-    && effectLe c3 a3 b3
+-- instance (EffectOrd c1 s1, EffectOrd c2 s2, EffectOrd c3 s3) => EffectOrd (c1,c2,c3) (s1,s2,s3) where
+--   effectLe (c1,c2,c3) (a1,a2,a3) (b1,b2,b3) =
+--     effectLe c1 a1 b1
+--     && effectLe c2 a2 b2
+--     && effectLe c3 a3 b3
 
-instance (EffectOrd c1 s1, EffectOrd c2 s2, EffectOrd c3 s3, EffectOrd c4 s4) => EffectOrd (c1,c2,c3,c4) (s1,s2,s3,s4) where
-  effectLe (c1,c2,c3,c4) (a1,a2,a3,a4) (b1,b2,b3,b4) =
-    effectLe c1 a1 b1
-    && effectLe c2 a2 b2
-    && effectLe c3 a3 b3
-    && effectLe c4 a4 b4
+-- instance (EffectOrd c1 s1, EffectOrd c2 s2, EffectOrd c3 s3, EffectOrd c4 s4) => EffectOrd (c1,c2,c3,c4) (s1,s2,s3,s4) where
+--   effectLe (c1,c2,c3,c4) (a1,a2,a3,a4) (b1,b2,b3,b4) =
+--     effectLe c1 a1 b1
+--     && effectLe c2 a2 b2
+--     && effectLe c3 a3 b3
+--     && effectLe c4 a4 b4
 
 instance (Camo c1 e1 s1, Camo c2 e2 s2) => Camo (c1,c2) (e1,e2) (s1,s2)
 
-instance (Camo c1 e1 s1, Camo c2 e2 s2, Camo c3 e3 s3) => Camo (c1,c2,c3) (e1,e2,e3) (s1,s2,s3)
+-- instance (Camo c1 e1 s1, Camo c2 e2 s2, Camo c3 e3 s3) => Camo (c1,c2,c3) (e1,e2,e3) (s1,s2,s3)
 
-instance (Camo c1 e1 s1, Camo c2 e2 s2, Camo c3 e3 s3, Camo c4 e4 s4) => Camo (c1,c2,c3,c4) (e1,e2,e3,e4) (s1,s2,s3,s4)
+-- instance (Camo c1 e1 s1, Camo c2 e2 s2, Camo c3 e3 s3, Camo c4 e4 s4) => Camo (c1,c2,c3,c4) (e1,e2,e3,e4) (s1,s2,s3,s4)
 
 -- The universal relation, providing no information, i.e. inconsistent
 -- snapshots.
@@ -306,9 +279,12 @@ instance (StateOrd c e) => StateOrd (UniversalC c) e where
   stateLe UniversalC = \_ _ -> True
   stateLe (RelateC c) = stateLe c
 
-instance (EffectOrd c e) => EffectOrd (UniversalC c) e where
+instance (EffectOrd c) => EffectOrd (UniversalC c) where
+  type Ef (UniversalC c) = Ef c
   effectLe UniversalC = \_ _ -> True
   effectLe (RelateC c) = effectLe c
+
+  intoCap e = RelateC (intoCap e)
 
 -- instance EffectSlice e where
 --   effectSlice wrt e1 e2 = effectSlice (cuwrt wrt) e1 e2
