@@ -69,8 +69,15 @@ instance (Ord s, Semigroup c) => Semigroup (ConstC c s) where
   ConstC m1 s1 c1 <> ConstC m2 s2 c2 =
     ConstC (m1 `Set.intersection` m2) (s1 `Set.intersection` s2) (c1 <> c2)
 
-instance (StateOrd c s) => StateOrd (ConstC c s) s where
-  -- stateLe (ConstLower c) = stateLe c
+instance (Ord s, Slice c) => Slice (ConstC c s) where
+  ConstC m1 s1 c1 |#| ConstC m2 s2 c2 =
+    ConstC (m1 `Set.union` m2) (s1 `Set.union` s2) (c1 |#| c2)
+
+instance (Ord s, StateOrd c s) => StateOrd (ConstC c s) s where
+  stateLe (ConstC m s c) s1 s2 =
+    Set.member s2 s
+    || (not (Set.member s2 m) || Set.member s1 m)
+    || stateLe c s1 s2
 
 instance (Absorbing c, StateOrd c s, EffectOrd c) => EffectOrd (ConstC c s) where
   type Ef (ConstC c s) = ConstE (Ef c) s

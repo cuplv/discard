@@ -168,13 +168,17 @@ class EffectOrd c where
 @
 slice a1 a2 = Just a3
 iff
-a1 = a1 <> a2 = a2 <> a3
+a1 = a2 |#| a3
 @
 -}
 class (Eq a, Semigroup a) => Slice a where
   slice :: a -> a -> Maybe a
   slice a1 a2 | a1 == a2 = Just a1
               | otherwise = Nothing
+
+  -- | Multiplicative conjunction, representing the combining of two
+  -- capabilities into a (possibly) greater capability.
+  (|#|) :: a -> a -> a
 
 class (EffectDom e s, StateOrd c s, EffectOrd c, Ef c ~ e) => Camo c e s
 
@@ -195,7 +199,8 @@ uniC = mempty
 -- instance (EffectDom e s, StateOrd c s, EffectOrd c e)
 --   => Camo c (ConstE e s) s
 
-instance Slice ()
+instance Slice () where
+  () |#| () = ()
 
 instance (Eq s) => StateOrd () s where
   stateLe _ s1 s2 = s1 == s2
@@ -230,6 +235,7 @@ instance (EffectOrd c1, EffectOrd c2) => EffectOrd (c1,c2) where
   effectLe (c1,c2) (a1,a2) (b1,b2) =
     effectLe c1 a1 b1
     && effectLe c2 a2 b2
+  intoCap (e1,e2) = (intoCap e1, intoCap e2)
 
 -- instance (EffectOrd c1 s1, EffectOrd c2 s2, EffectOrd c3 s3) => EffectOrd (c1,c2,c3) (s1,s2,s3) where
 --   effectLe (c1,c2,c3) (a1,a2,a3) (b1,b2,b3) =
