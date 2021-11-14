@@ -18,7 +18,10 @@ module Data.CARD.Classes
   , idC
   , impl
   , UniversalC (..)
-  , Slice (..)
+  , Split (..)
+  , Meet (..)
+  , BMeet (..)
+  , Cap (..)
   ) where
 
 import Data.Aeson
@@ -162,23 +165,20 @@ class EffectOrd c where
   effectLe :: c -> Ef c -> Ef c -> Bool
   intoCap :: Ef c -> c
 
-{-| Slicing is related to the 'Semigroup' implementation by the following  
+{-| Slicing is related to the 'Monoid' implementation by the following  
     law:
 
 @
-slice a1 a2 = Just a3
+'split' a1 a2 = 'Maybe.Just' a3
 iff
-a1 = a2 |#| a3
+a1 = a2 'Semigroup.<>' a3
 @
 -}
-class (Eq a, Semigroup a) => Slice a where
-  slice :: a -> a -> Maybe a
-  slice a1 a2 | a1 == a2 = Just a1
+class (Eq a, Monoid a) => Split a where
+  split :: a -> a -> Maybe a
+  split a1 a2 | a1 == a2 = Just mempty
+              | a2 == mempty = Just a1
               | otherwise = Nothing
-
-  -- | Multiplicative conjunction, representing the combining of two
-  -- capabilities into a (possibly) greater capability.
-  (|#|) :: a -> a -> a
 
 class (EffectDom e s, StateOrd c s, EffectOrd c, Ef c ~ e) => Camo c e s
 
@@ -199,8 +199,7 @@ uniC = mempty
 -- instance (EffectDom e s, StateOrd c s, EffectOrd c e)
 --   => Camo c (ConstE e s) s
 
-instance Slice () where
-  () |#| () = ()
+instance Split ()
 
 instance (Eq s) => StateOrd () s where
   stateLe _ s1 s2 = s1 == s2
@@ -260,7 +259,7 @@ instance (Camo c1 e1 s1, Camo c2 e2 s2) => Camo (c1,c2) (e1,e2) (s1,s2)
 -- snapshots.
 data UniversalC c
   = UniversalC
-  | RelateC c
+  | LimitC c
   deriving (Show,Eq,Ord,Generic)
 
 
@@ -273,27 +272,71 @@ instance (FromJSON c, FromJSONKey c) => FromJSONKey (UniversalC c)
 instance (Semigroup c) => Semigroup (UniversalC c) where
   UniversalC <> c = c
   c <> UniversalC = c
-  RelateC c1 <> RelateC c2 = RelateC (c1 <> c2)
+  LimitC c1 <> LimitC c2 = LimitC (c1 <> c2)
 
 instance (Semigroup c) => Monoid (UniversalC c) where
   mempty = UniversalC
 
+instance (Meet c) => Meet (UniversalC c) where
+  UniversalC `meet` c = c
+  c `meet` UniversalC = c
+  LimitC c1 `meet` LimitC c2 = LimitC (c1 `meet` c2)
+
+  c <=? UniversalC = True
+  UniversalC <=? c = False
+  LimitC c1 <=? LimitC c2 = c1 <=? c2
+
+instance (Meet c) => BMeet (UniversalC c) where
+  meetId = UniversalC
+
+instance (Split c) => Split (UniversalC c) where
+  split UniversalC _ = Just UniversalC
+  split _ UniversalC = Nothing
+  split (LimitC c1) (LimitC c2) = LimitC <$> split c1 c2
+
+instance (Monoid e, Cap c e) => Cap (UniversalC c) e where
+  mincap e = LimitC (mincap e)
+  undo e = LimitC (undo e)
+  weaken UniversalC _ = Just mempty
+  weaken _ UniversalC = Nothing
+  weaken (LimitC c1) (LimitC c2) = weaken c1 c2
+
 instance (Absorbing c) => Absorbing (UniversalC c) where
-  absorb = RelateC absorb
+  absorb = LimitC absorb
 
 instance (StateOrd c e) => StateOrd (UniversalC c) e where
   stateLe UniversalC = \_ _ -> True
-  stateLe (RelateC c) = stateLe c
+  stateLe (LimitC c) = stateLe c
 
 instance (EffectOrd c) => EffectOrd (UniversalC c) where
   type Ef (UniversalC c) = Ef c
   effectLe UniversalC = \_ _ -> True
-  effectLe (RelateC c) = effectLe c
+  effectLe (LimitC c) = effectLe c
 
-  intoCap e = RelateC (intoCap e)
-
--- instance EffectSlice e where
---   effectSlice wrt e1 e2 = effectSlice (cuwrt wrt) e1 e2
---   effectMerge wrt e1 e2 = effectMerge (cuwrt wrt) e1 e2
+  intoCap e = LimitC (intoCap e)
 
 instance (Camo c e s) => Camo (UniversalC c) e s
+
+class Meet a where
+  meet :: a -> a -> a
+  (<=?) :: a -> a -> Bool
+  a <=? b | compareP a b == Just LT = True
+          | otherwise = False
+
+  compareP :: a -> a -> Maybe Ordering
+  compareP a b | a <=? b && b <=? a = Just EQ
+               | a <=? b = Just LT
+               | b <=? a = Just GT
+               | otherwise = Nothing
+
+class (Meet a) => BMeet a where
+  meetId :: a
+
+class (Meet c, Split c, Monoid e) => Cap c e where
+  mincap :: e -> c
+
+  undo :: e -> c
+  undo _ = mempty
+
+  weaken :: c -> c -> Maybe e
+  weaken _ _ = Nothing

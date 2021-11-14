@@ -13,6 +13,9 @@ module Data.CARD.Counter
   , addAmt
   , mulAmt
   , CounterC
+  , addC
+  , subC
+  , mulC
   , lowerBound
   , upperBound
   ) where
@@ -119,45 +122,108 @@ mulE n | n >= 0 = ModifyE (AddMul n addId)
 additive :: (Eq n, Num n) => AddMul n -> Bool
 additive (AddMul m _) = m == mulId
 
-data Bounds
-  = LowerBound
-  | UpperBound
-  | ExactValue
+-- Nothing for each field means unlimited use, while Just
+-- <addId|mulId> means no use.
+data Bounds n
+  = Bounds { addBound :: Maybe n
+           , subBound :: Maybe n
+           , mulBound :: Maybe n
+           }
   deriving (Show,Eq,Ord,Generic)
 
-instance ToJSON Bounds where
+instance (ToJSON n) => ToJSON (Bounds n) where
   toEncoding = genericToEncoding defaultOptions
-instance ToJSONKey Bounds
-instance FromJSON Bounds
-instance FromJSONKey Bounds
+instance (ToJSON n, ToJSONKey n) => ToJSONKey (Bounds n)
+instance (FromJSON n) => FromJSON (Bounds n)
+instance (FromJSON n, FromJSONKey n) => FromJSONKey (Bounds n)
 
-instance Semigroup Bounds where
-  ExactValue <> _ = ExactValue
-  _ <> ExactValue = ExactValue
-  LowerBound <> UpperBound = ExactValue
-  UpperBound <> LowerBound = ExactValue
-  a <> _ = a
+addC' :: (Num n, Ord n) => n -> Bounds n
+addC' n | n >= 0 = Bounds (Just n) (Just addId) (Just mulId)
+        | otherwise = error $ "Negative value applied to addC."
 
-instance Absorbing Bounds where
-  absorb = ExactValue
+subC' :: (Num n, Ord n) => n -> Bounds n
+subC' n | n >= 0 = Bounds (Just addId) (Just n) (Just mulId)
+        | otherwise = error $ "Negative value applied to subC."
 
-instance (Num n, Ord n) => StateOrd Bounds n where
-  stateLe ExactValue = (==) -- EQV
-  stateLe LowerBound = (<=) -- LEQ
-  stateLe UpperBound = (>=) -- GEQ
+mulC' :: (Num n, Ord n) => n -> Bounds n
+mulC' n | n >= 0 = Bounds (Just addId) (Just addId) (Just n)
+        | otherwise = error $ "Negative value applied to mulC."
 
-instance (Num n, Ord n) => EffectOrd Bounds (AddMul n) where
-  effectLe c e1 e2 =
-    additive e1
-    && additive e2
-    && stateLe c (addAmt e1) (addAmt e2)
+lowerBound' :: (Num n) => Bounds n
+lowerBound' = Bounds Nothing (Just addId) (Just mulId)
 
-instance (Num n, Ord n) => Camo Bounds (AddMul n) n
+upperBound' :: (Num n) => Bounds n
+upperBound' = Bounds (Just addId) Nothing (Just mulId)
 
-type CounterC n = UniversalC (ConstC Bounds)
 
-lowerBound :: CounterC n
-lowerBound = RelateC . ConstC $ LowerBound
+-- data Bounds
+--   = LowerBound
+--   | UpperBound
+--   | ExactValue
+--   deriving (Show,Eq,Ord,Generic)
 
-upperBound :: CounterC n
-upperBound = RelateC . ConstC $ UpperBound
+(+?) :: (Num n) => Maybe n -> Maybe n -> Maybe n
+(+?) a b = (+) <$> a <*> b
+
+instance (Num n) => Semigroup (Bounds n) where
+  Bounds a1 s1 m1 <> Bounds a2 s2 m2 =
+    Bounds (a1 +? a2) (s1 +? s2) (m1 +? m2)
+
+instance (Num n) => Monoid (Bounds n) where
+  mempty = Bounds (Just addId) (Just addId) (Just mulId)
+
+(#?) :: (Num n, Ord n) => Maybe n -> Maybe n -> Maybe n
+(#?) (Just a) (Just b) = Just (min a b)
+(#?) Nothing b = b
+(#?) a Nothing = a
+
+(<=??) :: (Num n, Ord n) => Maybe n -> Maybe n -> Bool
+(<=??) (Just a) (Just b) = a <= b
+(<=??) Nothing _ = False
+(<=??) _ Nothing = True
+
+instance (Num n, Ord n) => Meet (Bounds n) where
+  meet (Bounds a1 s1 m1) (Bounds a2 s2 m2) =
+    Bounds (a1 #? a2) (s1 #? s2) (m1 #? m2)
+  (<=?) (Bounds a1 s1 m1) (Bounds a2 s2 m2) =
+    a1 <=?? a2 && s1 <=?? s2 && m1 <=?? m2
+
+-- instance Semigroup Bounds where
+--   ExactValue <> _ = ExactValue
+--   _ <> ExactValue = ExactValue
+--   LowerBound <> UpperBound = ExactValue
+--   UpperBound <> LowerBound = ExactValue
+--   a <> _ = a
+
+-- instance Absorbing Bounds where
+--   absorb = ExactValue
+
+-- instance (Num n, Ord n) => StateOrd Bounds n where
+--   stateLe ExactValue = (==) -- EQV
+--   stateLe LowerBound = (<=) -- LEQ
+--   stateLe UpperBound = (>=) -- GEQ
+
+-- instance (Num n, Ord n) => EffectOrd Bounds (AddMul n) where
+--   effectLe c e1 e2 =
+--     additive e1
+--     && additive e2
+--     && stateLe c (addAmt e1) (addAmt e2)
+
+-- instance (Num n, Ord n) => Camo Bounds (AddMul n) n
+
+type CounterC n = UniversalC (ConstC (Bounds n) n)
+
+addC :: (Num n, Ord n) => n -> CounterC n
+addC = LimitC . modifyC . addC'
+
+subC :: (Num n, Ord n) => n -> CounterC n
+subC = LimitC . modifyC . subC'
+
+mulC :: (Num n, Ord n) => n -> CounterC n
+mulC = LimitC . modifyC . mulC'
+
+lowerBound :: (Num n) => CounterC n
+lowerBound = LimitC . modifyC $ lowerBound'
+
+upperBound :: (Num n) => CounterC n
+upperBound = LimitC . modifyC $ upperBound'
