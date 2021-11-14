@@ -20,8 +20,9 @@ import Control.Lens
 
 import Data.CvRDT
 import Data.CARD
-import Data.CARD.Locks
-import Data.CARD.Res
+import Data.CARD.Capconf
+-- import Data.CARD.Locks
+-- import Data.CARD.Res
 
 -- | A 'Hist' is a sequence of CARD effects each paired with an 'i'
 -- identifier naming the replica responsible for them.  The

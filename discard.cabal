@@ -15,16 +15,17 @@ library
                      , Data.EventGraph.SetEG
                      , Data.EventGraph.Ipfs
                      , Data.CARD
+                     , Data.CARD.Capconf
                      , Data.CARD.Classes
                      , Data.CARD.Const
                      , Data.CARD.Counter
-                     , Data.CARD.Map
-                     , Data.CARD.Maybe
+                     -- , Data.CARD.Map
+                     -- , Data.CARD.Maybe
                      -- , Data.CARD.Locks
                      -- , Data.CARD.Res
-                     -- , Data.CARD.Store
-                     -- , Data.CvRDT
-                     -- , Data.LamportClock
+                     , Data.CARD.Store
+                     , Data.CvRDT
+                     , Data.LamportClock
                      -- , Lang.Carol
                      -- , Lang.Carol.Internal
                      -- , Lang.Carol.Bank
