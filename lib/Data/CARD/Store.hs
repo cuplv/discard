@@ -6,6 +6,7 @@ module Data.CARD.Store
   , Store
   , caps
   , hist
+  , rqs
   , histAppend
   -- * Convenient re-exports
   , module Data.CARD

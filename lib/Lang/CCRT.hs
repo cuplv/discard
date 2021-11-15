@@ -1,6 +1,8 @@
 module Lang.CCRT
   ( CCRT
   , CCRT'
+  , ReqHandler
+  , emptyReqHandler
   , checkRW
   , makeRequest
   , makeCleanup
@@ -32,31 +34,37 @@ data CCRT c e s m
          , ccrtFail :: CCRTFail c e -> m ()
          }
 
-data CCRT' i c e s m
-  = CCRT' { ccrtRequest :: Capconf i c -> Maybe (Capconf i c)
+data CCRT' q i c e s m
+  = CCRT' { ccrtRequest :: q -> Maybe q
           , ccrtCleanup :: Capconf i c -> Capconf i c
           , ccrtT :: CCRT c e s m
           }
 
-checkRead :: (Ord i, Cap c e) => i -> CCRT' i c e s m -> Capconf i c -> Maybe e
+type ReqHandler q i c = q -> Capconf i c -> Capconf i c
+
+emptyReqHandler = \_ -> id
+
+checkRead :: (Ord i, Cap c e) => i -> CCRT' q i c e s m -> Capconf i c -> Maybe e
 checkRead i t cf = weaken (ccrtRead $ ccrtT t) (remoteG' i cf)
 
-checkWrite :: (Ord i, Cap c e) => i -> CCRT' i c e s m -> Capconf i c -> Bool
+checkWrite :: (Ord i, Cap c e) => i -> CCRT' q i c e s m -> Capconf i c -> Bool
 checkWrite i t cf = (ccrtWrite $ ccrtT t) <=? (localG i cf)
 
-checkRW :: (Ord i, Cap c e) => i -> CCRT' i c e s m -> Capconf i c -> Either (Unsat c) e
+checkRW :: (Ord i, Cap c e) => i -> CCRT' q i c e s m -> Capconf i c -> Either (Unsat c) e
 checkRW i t cf = if checkWrite i t cf
   then case checkRead i t cf of
     Just e -> Right e
     Nothing -> Left (UnsatRead (ccrtRead $ ccrtT t))
   else Left (UnsatWrite (ccrtWrite $ ccrtT t))
 
-makeRequest t cf = ccrtRequest t cf
+makeRequest :: CCRT' q i c e s m -> q -> Maybe q
+makeRequest t q = ccrtRequest t q
 
+makeCleanup :: CCRT' q i c e s m -> Capconf i c -> Capconf i c
 makeCleanup t cf = ccrtCleanup t cf
 
-transactT :: CCRT' i c e s m -> s -> m e
+transactT :: CCRT' q i c e s m -> s -> m e
 transactT t s = (ccrtTrans $ ccrtT t) s
 
-failT :: CCRT' i c e s m -> CCRTFail c e -> m ()
+failT :: CCRT' q i c e s m -> CCRTFail c e -> m ()
 failT t = ccrtFail (ccrtT t)

@@ -57,7 +57,7 @@ import Network.Discard.Broadcast
 --     -- successful.
 --   | TryConsume e (Maybe e -> m (Job c e s m a))
 
-type Job q i c e s = CCRT' i c e s IO
+type Job q i c e s = CCRT' q i c e s IO
 
 -- data Job c e s
 --   = Coordinate (CCRT c e s IO)
@@ -143,7 +143,9 @@ data Manager q h i c e s = Manager
   , batched :: Int
   , batchMax :: Int
   , onGetBroadcastCb :: IO ()
-  , manDebugLevel :: Int }
+  , manDebugLevel :: Int
+  , manReqHandler :: ReqHandler q i c
+  }
 
 type ManM r q h i c e s k
   = StateT
@@ -164,7 +166,7 @@ data ManagerConn q h i c e s = ManagerConn
 --   handleQ = handleQR
 --   handleQAsync c h fin = handleQM fin c h
 
-runCCRT :: ManagerConn q h i c e s -> CCRT' i c e s IO -> IO ()
+runCCRT :: ManagerConn q h i c e s -> CCRT' q i c e s IO -> IO ()
 runCCRT man t = giveJob t man
 
 stateStore :: Lens' (s, Store q h i c e) (Store q h i c e)
@@ -206,7 +208,9 @@ data DManagerSettings q h i c e s = DManagerSettings
   , onLockUpdate :: Capconf i c -> IO ()
   , onGetBroadcast :: IO ()
   , baseStoreValue :: s
-  , dmsDebugLevel :: Int }
+  , dmsDebugLevel :: Int
+  , dmsReqHandler :: ReqHandler q i c
+  }
 
 -- | Default settings using 'mempty' for the base store value.
 defaultDManagerSettings :: (Monoid s) => DManagerSettings q h i c e s
@@ -222,7 +226,9 @@ defaultDManagerSettings' s = DManagerSettings
   , onLockUpdate = const $ return ()
   , onGetBroadcast = return ()
   , baseStoreValue = s
-  , dmsDebugLevel = 0 }
+  , dmsDebugLevel = 0
+  , dmsReqHandler = emptyReqHandler 
+  }
 
 -- | A tag to tell awaitNetwork whether it is continuing in online (a
 -- first message was recieved) or offline (the timeout was reached)
@@ -265,7 +271,7 @@ initManager :: (Ord s, ManC r q h i c e s, Transport t, Carries t (Store q h i c
             -> Store q h i c e -- ^ Initial history + locks
             -> DManagerSettings q h i c e s
             -> IO (ManagerConn q h i c e s)
-initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl) = do
+initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl rqh) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO (val0,store0)
@@ -282,6 +288,7 @@ initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLo
         bsize
         msgCb
         dbl
+        rqh
       onUp = upWithSumms latestState upCb upCbVal upCbLocks r valBase
   ti <- forkIO $ do
           runCvRep
@@ -410,7 +417,12 @@ handleWaiting = do
   modify (\m -> m { manWaitingRoom = wr' })
 
 handleRequests :: (ManC r q h i c e s) => ManM r q h i c e s k ()
-handleRequests = return ()
+handleRequests = do
+  h <- manReqHandler <$> get
+  r <- lift.use $ store.rqs
+  cf <- lift.use $ store.caps
+  lift $ incorp' caps (h r cf)
+  return ()
 
 
 -- getWaiting :: (ManC r q h i c e s)
@@ -540,10 +552,10 @@ tryRequest
   -> Job q i c e s
   -> ManM r q h i c e s k Bool
 tryRequest u t = do
-  cf <- lift.use $ store.caps
-  case makeRequest t cf of
-    Just cf' -> do
-      lift (incorp' caps cf')
+  q <- lift.use $ store.rqs
+  case makeRequest t q of
+    Just q' -> do
+      lift (incorp' rqs q')
       bcast'
       return True
     Nothing -> do
