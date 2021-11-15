@@ -118,15 +118,16 @@ data DManagerSettings q h i c e s = DManagerSettings
   , onGetBroadcast :: IO ()
   , baseStoreValue :: s
   , dmsDebugLevel :: Int
+  , dmsBaseReqState :: q
   , dmsReqHandler :: ReqHandler q i c
   }
 
 -- | Default settings using 'mempty' for the base store value.
-defaultDManagerSettings :: (Monoid s) => DManagerSettings q h i c e s
+defaultDManagerSettings :: (Monoid q, Monoid s) => DManagerSettings q h i c e s
 defaultDManagerSettings = defaultDManagerSettings' mempty
 
 -- | Default settings with an explicitly provided base store value.
-defaultDManagerSettings' :: s -> DManagerSettings q h i c e s
+defaultDManagerSettings' :: (Monoid q) => s -> DManagerSettings q h i c e s
 defaultDManagerSettings' s = DManagerSettings
   { timeoutUnitSize = 100000
   , setBatchSize = 1
@@ -136,6 +137,7 @@ defaultDManagerSettings' s = DManagerSettings
   , onGetBroadcast = return ()
   , baseStoreValue = s
   , dmsDebugLevel = 0
+  , dmsBaseReqState = mempty
   , dmsReqHandler = emptyReqHandler 
   }
 
@@ -180,7 +182,7 @@ initManager :: (Ord s, ManC r q h i c e s, Transport t, Carries t (Store q h i c
             -> Store q h i c e -- ^ Initial history + locks
             -> DManagerSettings q h i c e s
             -> IO (ManagerConn q h i c e s)
-initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl rqh) = do
+initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLocks msgCb valBase dbl _ rqh) = do
   eventQueue <- newTQueueIO
   jobQueue <- newTQueueIO
   latestState <- newTVarIO (val0,store0)

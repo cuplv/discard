@@ -33,6 +33,9 @@ data Change i c
   | Unmasked
   deriving (Show,Eq,Ord,Generic)
 
+instance (ToJSON i, ToJSON c) => ToJSON (Change i c)
+instance (FromJSON i, FromJSON c) => FromJSON (Change i c)
+
 change :: (Meet c, Monoid c, Split c) => c -> Change i c -> Maybe c
 change a (Gain b) = Just (a <> b)
 change a (Drop b) = split a b
@@ -51,6 +54,9 @@ data Hist i c
          , histInbox :: c
          }
   deriving (Show,Eq,Ord,Generic)
+
+instance (ToJSON i, ToJSON c) => ToJSON (Hist i c)
+instance (FromJSON i, FromJSON c) => FromJSON (Hist i c)
 
 takeLonger l1 l2 | length l1 > length l2 = l1
                  | otherwise = l2
@@ -120,12 +126,24 @@ data Capconf i c
   = Capconf { capConf :: Map i (Hist i c) }
   deriving (Show,Eq,Ord,Generic)
 
+instance (ToJSON i, ToJSONKey i, ToJSON c) => ToJSON (Capconf i c)
+instance (Ord i, FromJSON i, FromJSONKey i, FromJSON c) => FromJSON (Capconf i c)
+
+instance
+  (Ord i, Ord c, Meet c, Monoid c, Split c)
+  => Semigroup (Capconf i c) where
+  Capconf m1 <> Capconf m2 = Capconf $ Map.unionWith mergeH m1 m2
+
+instance
+  (Ord i, Ord c, Meet c, Monoid c, Split c)
+  => Monoid (Capconf i c) where
+  mempty = Capconf mempty
+
 instance 
   (Monad m, Ord i, Ord c, Meet c, Monoid c, Split c)
   => CvRDT r (Capconf i c) m where
-  cvempty _ = return $ Capconf mempty
-  cvmerge _ (Capconf m1) (Capconf m2) = 
-    return $ Capconf $ Map.unionWith mergeH m1 m2
+  cvempty _ = return $ mempty
+  cvmerge _ cf1 cf2 = return $ cf1 <> cf2
 
 -- | Get capability belonging to @i@ replica.  If the @i@ replica does
 -- not have a capability assigned, it is assumed to be

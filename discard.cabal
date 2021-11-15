@@ -32,15 +32,16 @@ library
                      -- , Lang.Carol.Internal
                      -- , Lang.Carol.Bank
                      -- , Lang.Carol.Warehouse
-                     -- , Network.Discard
+                     , Network.Discard
                      -- , Network.Discard.Experiment
                      -- , Network.Discard.Experiment2
-                     -- , Storage.Ipfs.Types
-                     -- , Storage.Ipfs.Turtle
-                     -- , Storage.Ipfs.Http
+                     , Storage.Ipfs.Types
+                     , Storage.Ipfs.Turtle
+                     , Storage.Ipfs.Http
 
   other-modules:       Network.Discard.Broadcast
                      , Network.Discard.RepCard
+                     , Network.Discard.Node
 
   build-depends:       base >=4.10 && <4.15
                      , containers
