@@ -1,5 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Data.CARD.Capconf
   ( Capconf
@@ -14,6 +16,7 @@ module Data.CARD.Capconf
   ) where
 
 import Data.CARD.Classes
+import Data.CvRDT
 
 import Data.Aeson
 import Data.Map (Map)
@@ -115,6 +118,13 @@ getCap (Hist c _ ms a) = (<> a) <$> foldM change c ms
 data Capconf i c
   = Capconf { capConf :: Map i (Hist i c) }
   deriving (Show,Eq,Ord,Generic)
+
+instance 
+  (Monad m, Ord i, Ord c, Meet c, Monoid c, Split c)
+  => CvRDT r (Capconf i c) m where
+  cvempty _ = return $ Capconf mempty
+  cvmerge _ (Capconf m1) (Capconf m2) = 
+    return $ Capconf $ Map.unionWith mergeH m1 m2
 
 -- | Get capability belonging to @i@ replica.  If the @i@ replica does
 -- not have a capability assigned, it is assumed to be

@@ -26,6 +26,7 @@ library
                      , Data.CARD.Store
                      , Data.CvRDT
                      , Data.LamportClock
+                     , Lang.CCRT
                      -- , Lang.Carol
                      -- , Lang.Carol.Internal
                      -- , Lang.Carol.Bank
@@ -37,10 +38,8 @@ library
                      -- , Storage.Ipfs.Turtle
                      -- , Storage.Ipfs.Http
 
-  -- other-modules:       Network.Discard.Node
-  --                    , Network.Discard.Broadcast
-  --                    , Network.Discard.RateControl
-  --                    , Network.Discard.RepCard
+  other-modules:       Network.Discard.Broadcast
+                     , Network.Discard.RepCard
 
   build-depends:       base >=4.10 && <4.15
                      , containers
