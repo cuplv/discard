@@ -165,7 +165,7 @@ class EffectOrd c where
   effectLe :: c -> Ef c -> Ef c -> Bool
   intoCap :: Ef c -> c
 
-{-| Slicing is related to the 'Monoid' implementation by the following  
+{-| 'Split' is related to the 'Monoid' implementation by the following
     law:
 
 @
@@ -182,13 +182,6 @@ class (Eq a, Monoid a) => Split a where
 
 class (EffectDom e s, StateOrd c s, EffectOrd c, Ef c ~ e) => Camo c e s
 
-{-| The identity relation, a synonym for 'absorb'. -}
-idC :: (Absorbing c) => c
-idC = absorb
-
-{-| The universal relation, a synonym for 'mempty'. -}
-uniC :: (Monoid c) => c
-uniC = mempty
 
 -- Possibly the "downgrade" function should be provided by the Camo
 -- implementation, since it involves both the state (a test on a
@@ -332,11 +325,21 @@ class Meet a where
 class (Meet a) => BMeet a where
   meetId :: a
 
-class (Meet c, Split c, Monoid e) => Cap c e where
+class (BMeet c, Split c, Monoid e) => Cap c e where
   mincap :: e -> c
 
   undo :: e -> c
   undo _ = mempty
 
   weaken :: c -> c -> Maybe e
-  weaken _ _ = Nothing
+  weaken c1 c2 | meetId <=? c1 = Just idE
+               | c2 <=? mempty = Just idE
+               | otherwise = Nothing
+
+{-| The identity relation, a synonym for 'mempty'. -}
+idC :: (Monoid c) => c
+idC = mempty
+
+{-| The universal relation, a synonym for 'meetId'. -}
+uniC :: (BMeet c) => c
+uniC = meetId

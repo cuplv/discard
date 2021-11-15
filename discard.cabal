@@ -19,6 +19,7 @@ library
                      , Data.CARD.Classes
                      , Data.CARD.Const
                      , Data.CARD.Counter
+                     , Data.CARD.InfSet
                      -- , Data.CARD.Map
                      -- , Data.CARD.Maybe
                      -- , Data.CARD.Locks

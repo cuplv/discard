@@ -188,6 +188,9 @@ instance (Num n, Ord n) => Meet (Bounds n) where
   (<=?) (Bounds a1 s1 m1) (Bounds a2 s2 m2) =
     a1 <=?? a2 && s1 <=?? s2 && m1 <=?? m2
 
+instance (Num n, Ord n) => BMeet (Bounds n) where
+  meetId = Bounds Nothing Nothing Nothing
+
 -- instance Semigroup Bounds where
 --   ExactValue <> _ = ExactValue
 --   _ <> ExactValue = ExactValue
