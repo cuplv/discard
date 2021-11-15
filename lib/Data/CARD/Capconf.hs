@@ -7,6 +7,7 @@ module Data.CARD.Capconf
   ( Capconf
   , localG
   , remoteG
+  , remoteG'
   , consumeG
   , transferG
   , acceptG
@@ -140,6 +141,10 @@ remoteG :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> Map i c
 remoteG i (Capconf m) =
   Map.map (fromJust . getCap . unmaskOthers i) . Map.delete i $ m
 
+-- | Get accumulated capability held by all remote replicas (dropping
+-- masks imposed by remote replicas).
+remoteG' :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> c
+remoteG' i cf = Map.foldr (<>) mempty (remoteG i cf)
 
 gainG :: (Ord i, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Capconf i c
 gainG i c (Capconf m) = case Map.lookup i m of
