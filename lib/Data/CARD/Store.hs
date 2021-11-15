@@ -52,7 +52,7 @@ caps = _1
 hist :: Lens' (Store h i c e) (Hist h i e)
 hist = _2
 
--- | Emit a store effect, tagged with a replica ID.
+-- | Issue a store effect, tagged with a replica ID.
 histAppend
   :: (Ord i, Ord c, Ord e, CvChain r h (i,e) m, Meet c, Monoid c, Split c)
   => i
@@ -60,5 +60,5 @@ histAppend
   -> CvRepCmd r (Store h i c e) k m ()
 histAppend i e = do 
   r <- use resolver
-  emitOn' hist $ append r (i,e)
+  incorpOn' hist $ append r (i,e)
   return ()

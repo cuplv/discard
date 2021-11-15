@@ -39,9 +39,9 @@ import Data.Time.Clock
 import Data.Foldable (fold)
 import Control.Lens
 
-import Data.CvRDT
+import Data.CvRDT hiding (emit, emitOn, emitOn')
 import Data.CARD.Store
-import Lang.CCRT
+import Lang.CCRT hiding (CCRT)
 -- import Lang.Carol.Internal
 -- import Network.Discard.RateControl
 import Network.Discard.Broadcast
@@ -57,8 +57,10 @@ import Network.Discard.Broadcast
 --     -- successful.
 --   | TryConsume e (Maybe e -> m (Job c e s m a))
 
-data Job c e s
-  = Coordinate (CCRT c e s IO)
+type Job i c e s = CCRT' i c e s IO
+
+-- data Job c e s
+--   = Coordinate (CCRT c e s IO)
 
 -- handleQ' :: (Monad m, Eq e, Monoid e, Eq c, Monoid c)
 --          => (r -> m a) -- ^ Return callback
@@ -131,16 +133,16 @@ failJob (Working j0 _) = Idle
 finishJob (Working _ _) = Idle
 
 data Manager h i c e s = Manager
-  { manInbox :: TQueue (Either (BMsg (Store h i c e)) (Job c e s))
+  { manInbox :: TQueue (Either (BMsg (Store h i c e)) (Job i c e s))
   , manId :: i
   , manOthers :: [i]
-  , manJobQueue :: TQueue (Job c e s)
-  , manWaitingRoom :: [(c, s -> IO (Job c e s))]
-  , manCurrentJob :: Workspace (Job c e s)
+  , manJobQueue :: TQueue (Job i c e s)
+  , manWaitingRoom :: [Job i c e s]
+  , manCurrentJob :: Workspace (Job i c e s)
   , manLatest :: TVar (s, Store h i c e)
   , grantMultiplex :: Int
-  , batcheff :: [e]
-  , batchSize :: Int
+  , batched :: Int
+  , batchMax :: Int
   , onGetBroadcastCb :: IO ()
   , manDebugLevel :: Int }
 
@@ -155,7 +157,7 @@ instance
   (CvRDT r (Hist h i e) IO, Ord i, CvChain r h (i,e) IO, Eq e, Eq c, Ord e, Ord c, Cap c e, EffectDom e s) => ManC r h i c e s
 
 data ManagerConn h i c e s = ManagerConn 
-  { eventQueue :: TQueue (Either (BMsg (Store h i c e)) (Job c e s))
+  { eventQueue :: TQueue (Either (BMsg (Store h i c e)) (Job i c e s))
   , latestState :: TVar (s, Store h i c e)
   , manLoopThreadId :: ThreadId }
 
@@ -163,8 +165,8 @@ data ManagerConn h i c e s = ManagerConn
 --   handleQ = handleQR
 --   handleQAsync c h fin = handleQM fin c h
 
-runCCRT :: ManagerConn h i c e s -> CCRT c e s IO -> IO ()
-runCCRT man t = giveJob (Coordinate t) man
+runCCRT :: ManagerConn h i c e s -> CCRT' i c e s IO -> IO ()
+runCCRT man t = giveJob t man
 
 stateStore :: Lens' (s, Store h i c e) (Store h i c e)
 stateStore = _2
@@ -175,7 +177,7 @@ stateVal = _1
 giveUpdate :: BMsg (Store h i c e) -> ManagerConn h i c e s -> IO ()
 giveUpdate m (ManagerConn q _ _) = lstm $ writeTQueue q (Left m)
 
-giveJob :: Job c e s -> ManagerConn h i c e s -> IO ()
+giveJob :: Job i c e s -> ManagerConn h i c e s -> IO ()
 giveJob j (ManagerConn q _ _) = lstm $ writeTQueue q (Right j)
 
 getLatestState :: ManagerConn h i c e s -> IO (s, Store h i c e)
@@ -278,7 +280,7 @@ initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLo
         Idle
         latestState
         0
-        []
+        0
         bsize
         msgCb
         dbl
@@ -320,36 +322,43 @@ managerLoop = do
   -- liftIO $ putStrLn "Handle latest..."
   dbg 1 "Loop Phase: handleLatest"
   handleLatest
-  -- Put jobs ready for retry back in the job queue
-  -- liftIO $ putStrLn "Resurrect fails..."
-  dbg 1 "Loop Phase: resurrectFails"
-  resurrectFails
-  -- Work on current job or start next one, taking first from the
-  -- waiting area.  New jobs that need requests have the request made
-  -- and go to the waiting area.
-  -- liftIO $ putStrLn "Work..."
-  dbg 1 "Loop Phase: workOnJob"
-  workOnJob
+
+  -- -- Put jobs ready for retry back in the job queue
+  -- -- liftIO $ putStrLn "Resurrect fails..."
+  -- dbg 1 "Loop Phase: resurrectFails"
+  -- resurrectFails
+
+  dbg 1 "Loop Phase: handleWaiting"
+  handleWaiting
+
+  -- -- Work on current job or start next one, taking first from the
+  -- -- waiting area.  New jobs that need requests have the request made
+  -- -- and go to the waiting area.
+  -- -- liftIO $ putStrLn "Work..."
+  -- dbg 1 "Loop Phase: workOnJob"
+  -- workOnJob
   
+  -- Run the application-specific request-handling function on the
+  -- request state.
+  dbg 1 "Loop Phase: handleRequests"
+  handleRequests
 
-  -- I still need to add a component to the store that carries mask
-  -- requests, in place of lock requests.
+  -- -- Enque locking requests from other replicas
+  -- -- liftIO $ putStrLn "Handle lock reqs..."
+  -- dbg 1 "Loop Phase: handleLockReqs"
+  -- handleLockReqs
+  -- -- And grant them at the appropriate rate
+  -- -- liftIO $ putStrLn "Grant lock reqs..."
+  -- dbg 1 "Loop Phase: grantLockReqs"
+  -- grantLockReqs
 
-  -- Enque locking requests from other replicas
-  -- liftIO $ putStrLn "Handle lock reqs..."
-  dbg 1 "Loop Phase: handleLockReqs"
-  handleLockReqs
-  -- And grant them at the appropriate rate
-  -- liftIO $ putStrLn "Grant lock reqs..."
-  dbg 1 "Loop Phase: grantLockReqs"
-  grantLockReqs
   -- And loop
   managerLoop
 
-onCurrent :: (ManC r h i c e s) 
-          => (Workspace (Job c e s) -> Workspace (Job c e s)) 
-          -> ManM r h i c e s k ()
-onCurrent f = modify (\m -> m { manCurrentJob = f (manCurrentJob m) })
+-- onCurrent :: (ManC r h i c e s) 
+--           => (Workspace (Job i c e s) -> Workspace (Job i c e s)) 
+--           -> ManM r h i c e s k ()
+-- onCurrent f = modify (\m -> m { manCurrentJob = f (manCurrentJob m) })
 
 -- onRCI :: (ManC r h i c e s) 
 --       => (RCIndex i c (Job c e s IO ()) 
@@ -360,16 +369,21 @@ onCurrent f = modify (\m -> m { manCurrentJob = f (manCurrentJob m) })
 --              modify (\m -> m {manRCIndex = rci' })
 
 data ManEvent h i c e s = ManNew (Either (BMsg (Store h i c e)) 
-                                         (Job c e s)) 
+                                         (Job i c e s)) 
 
 handleLatest :: (ManC r h i c e s) => ManM r h i c e s k ()
 handleLatest = do
   man <- get
   let updates = ManNew <$> readTQueue (manInbox man)
   lstm updates >>= \case
-    ManNew (Right j) -> case j of
-      _ -> do dbg 1 "Received job."
-              lstm $ writeTQueue (manJobQueue man) j
+    ManNew (Right t) -> tryTransact t >>= \case
+      Nothing -> return () -- all done, t has passed or failed
+      Just u -> tryRequest u t >>= \case
+        False -> return () -- all done, t has failed
+        True -> putOnHold t -- awaiting a response, resume later
+    -- ManNew (Right t) -> case t of
+    --   _ -> do dbg 1 "Received job."
+    --           lstm $ writeTQueue (manJobQueue man) j
     ManNew (Left (BCast s)) -> do
       dbg 1 "Received broadcast."
       -- If the received broadcast contains new updates, rebroadcast it.
@@ -386,26 +400,40 @@ handleLatest = do
     --   -- liftIO $ putStrLn "RateControl event."
     --   modify (\m -> m { manRCIndex = rci' })
 
-
-getWaiting :: (ManC r h i c e s)
-           => ManM r h i c e s k (Maybe (Job c e s))
-getWaiting = do
+handleWaiting :: (ManC r h i c e s) => ManM r h i c e s k ()
+handleWaiting = do
   i <- manId <$> get
-  others <- manOthers <$> get
-  ls <- lift.use $ store.locks
+  cf <- lift.use $ store.caps
   wr <- manWaitingRoom <$> get
-  let findReady (c,fj) (Nothing,wr') = 
-        if (holding' i ls `impl` c) && confirmed i others ls
-           then (Just (c,fj),wr')
-           else (Nothing, (c,fj):wr')
-      findReady cfj (fj,wr') = (fj,cfj:wr')
-      (r,wr') = foldr findReady (Nothing,[]) wr
-  case r of
-    Just (c,fj) -> do
-      modify (\m -> m { manWaitingRoom = wr' })
-      modify (\m -> m { grantMultiplex = grantMultiplex m + 1 })
-      Just <$> (liftIO . fj =<< manGetLatest' c)
-    Nothing -> return Nothing
+  let tryT ts t = tryTransact t >>= \case
+        Nothing -> return ts
+        Just _ -> return $ ts ++ [t]
+  wr' <- foldM tryT [] wr
+  modify (\m -> m { manWaitingRoom = wr' })
+
+handleRequests :: (ManC r h i c e s) => ManM r h i c e s k ()
+handleRequests = return ()
+
+
+-- getWaiting :: (ManC r h i c e s)
+--            => ManM r h i c e s k (Maybe (Job i c e s))
+-- getWaiting = do
+--   i <- manId <$> get
+--   others <- manOthers <$> get
+--   ls <- lift.use $ store.locks
+--   wr <- manWaitingRoom <$> get
+--   let findReady (c,fj) (Nothing,wr') = 
+--         if (holding' i ls `impl` c) && confirmed i others ls
+--            then (Just (c,fj),wr')
+--            else (Nothing, (c,fj):wr')
+--       findReady cfj (fj,wr') = (fj,cfj:wr')
+--       (r,wr') = foldr findReady (Nothing,[]) wr
+--   case r of
+--     Just (c,fj) -> do
+--       modify (\m -> m { manWaitingRoom = wr' })
+--       modify (\m -> m { grantMultiplex = grantMultiplex m + 1 })
+--       Just <$> (liftIO . fj =<< manGetLatest' c)
+--     Nothing -> return Nothing
 
 anyWaiting :: (ManC r h i c e s) => ManM r h i c e s k Bool
 anyWaiting = manWaitingRoom <$> get >>= \case
@@ -424,54 +452,123 @@ manGetLatest = (^.stateVal) <$> (lstm . readTVar =<< manLatest <$> get)
 --       v = eFun re (s ^. stateVal)
 --   return v
 
-putOnHold :: (ManC r h i c e s)
-          => c
-          -> (s -> IO (Job c e s))
-          -> ManM r h i c e s k ()
-putOnHold c fj = do
-  i <- manId <$> get
-  lift (emitOn' locks $ return . request i c)
-  modify (\m -> m { manWaitingRoom = (c,fj) : manWaitingRoom m })
+putOnHold :: (ManC r h i c e s) => Job i c e s -> ManM r h i c e s k ()
+putOnHold t = modify (\m -> m { manWaitingRoom = manWaitingRoom m ++ [t] })
 
-histAppend' :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
-histAppend' e = do
+-- putOnHold :: (ManC r h i c e s)
+--           => c
+--           -> (s -> IO (Job c e s))
+--           -> ManM r h i c e s k ()
+-- putOnHold c fj = do
+--   i <- manId <$> get
+--   lift (emitOn' locks $ return . request i c)
+--   modify (\m -> m { manWaitingRoom = (c,fj) : manWaitingRoom m })
+
+-- histAppend' :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
+-- histAppend' e = do
+--   i <- manId <$> get
+--   lift $ histAppend i e
+
+-- sendBatch :: (ManC r h i c e s) => ManM r h i c e s k ()
+-- sendBatch = do
+--   beff <- batcheff <$> get
+--   if length beff > 0
+--      then do histAppend' (fold beff)
+--              modify $ \m -> m { batcheff = [] }
+--      else return ()
+
+-- enbatch :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
+-- enbatch e = do
+--   bsize <- batchSize <$> get
+--   beff' <- (e:) . batcheff <$> get
+--   modify $ \m -> m { batcheff = beff' }
+--   if length beff' >= bsize
+--      then sendBatch
+--      else return ()
+
+-- | Broadcast current state and reset batch size.
+bcast' :: (ManC r h i c e s) => ManM r h i c e s k ()
+bcast' = do
+  lift bcast
+  modify $ \m -> m { batched = 0 }
+
+-- | Append an effect to the local store.  If the max batch size has
+-- been exceeded, or if there are no more transactions in the queue,
+-- broadcast the change (resetting the batch size).
+issueEffect :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
+issueEffect e = do
   i <- manId <$> get
+  -- Append effect to local history
   lift $ histAppend i e
+  bmax <- batchMax <$> get
+  b' <- (+ 1) . batched <$> get
+  qEmpty <- lstm . isEmptyTQueue =<< manJobQueue <$> get
+  if b' > bmax || qEmpty
+     then bcast'
+     else modify $ \m -> m { batched = b' }
 
-sendBatch :: (ManC r h i c e s) => ManM r h i c e s k ()
-sendBatch = do
-  beff <- batcheff <$> get
-  if length beff > 0
-     then do histAppend' (fold beff)
-             modify $ \m -> m { batcheff = [] }
-     else return ()
+-- | Attempt to run a transaction, returning 'Nothing' if it has
+-- completed or permanently failed, and @'Just' u@ if requirement @u@
+-- remains unsatisfied.  If a requirement remains unsatisfied, the
+-- caller should try to make a request on its behalf (if new), or
+-- return it to the waiting room (if old).
+tryTransact
+  :: (ManC r h i c e s)
+  => Job i c e s
+  -> ManM r h i c e s k (Maybe (Unsat c))
+tryTransact t = do
+  i <- manId <$> get
+  cf <- lift.use $ store.caps
+  case checkRW i t cf of
+    Right sim -> do 
+      snap <- eFun sim <$> manGetLatest
+      e <- liftIO $ transactT t snap
+      case consumeG i e cf of
+        Just cf' -> do
+          lift (incorp' caps cf')
+          issueEffect e
+          return Nothing
+        Nothing -> do
+          liftIO $ failT t (WriteError e)
+          return Nothing
+    Left u -> return (Just u)
 
-enbatch :: (ManC r h i c e s) => e -> ManM r h i c e s k ()
-enbatch e = do
-  bsize <- batchSize <$> get
-  beff' <- (e:) . batcheff <$> get
-  modify $ \m -> m { batcheff = beff' }
-  if length beff' >= bsize
-     then sendBatch
-     else return ()
+-- | Attempt to coordinate on a transaction's behalf, returning 'True'
+-- if a request has been made.  If the transaction has no coordination
+-- strategy, fail the transaction and return 'False'.
+tryRequest
+  :: (ManC r h i c e s)
+  => Unsat c
+  -> Job i c e s
+  -> ManM r h i c e s k Bool
+tryRequest u t = do
+  cf <- lift.use $ store.caps
+  case makeRequest t cf of
+    Just cf' -> do
+      lift (incorp' caps cf')
+      bcast'
+      return True
+    Nothing -> do
+      liftIO (failT t (UnsatError u))
+      return False
 
-workOnJob :: (ManC r h i c e s) => ManM r h i c e s k ()
-workOnJob = manCurrentJob <$> get >>= \case
+-- workOnJob :: (ManC r h i c e s) => ManM r h i c e s k ()
+-- workOnJob = manCurrentJob <$> get >>= \case
 
-  Working j0 j -> do
-    i <- manId <$> get
-    others <- manOthers <$> get
-    cf <- lift.use $ store.caps
-    case j of -- do work!
-      Coordinate t -> do
-        case checkRW i t cf of
-          Just sim -> do snap <- eFun sim <$> manGetLatest
-                         e <- liftIO $ transactT t snap
-                         enbatch e
-          Nothing -> case makeRequest t cf of
-            Just cf' -> do lift (emit' caps cf')
-                           return ()
-            Nothing -> liftIO $ failT t
+--   Working j0 j -> do
+--     i <- manId <$> get
+--     others <- manOthers <$> get
+--     cf <- lift.use $ store.caps
+--     case j of -- do work!
+--       Coordinate t -> do
+--         case checkRW i t cf of
+--           Just sim -> do snap <- eFun sim <$> manGetLatest
+--                          e <- liftIO $ transactT t snap
+--                          enbatch e
+--           Nothing -> case makeRequest t cf of
+--             Just cf' -> do lift (emit' caps cf')
+--                            return ()
+--             Nothing -> liftIO $ failT t
         -- if not $ requested i c cs
         --    then undefined
         --    else undefined
@@ -537,39 +634,39 @@ workOnJob = manCurrentJob <$> get >>= \case
       --   onCurrent finishJob
       --   workOnJob
 
-  Idle -> do -- No current job, try to pop from queue
-    i <- manId <$> get
-    ls <- lift.use $ store.locks
-    let releaseAll = 
-          if holding i ls
-             then do -- liftIO (putStrLn "Releasing locks...")
-                     mx <- grantMultiplex <$> get 
-                     -- if mx > 1
-                     --    then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
-                     --    else return ()
-                     modify (\m -> m { grantMultiplex = 0 })
-                     lift (emitOn' locks $ return . release i) >> return ()
-             else return ()
-    -- Try waiting room first
-    getWaiting >>= \case
-      Just j -> onCurrent (initJob j) >> workOnJob
-      Nothing -> do
-        -- If no one is ready in waiting room, take from main queue
-        aw <- anyWaiting
-        -- If no one is in the waiting room at all, release all locks
-        if not aw
-           then releaseAll
-           else return ()
-        manJobQueue <$> get >>= lstm . tryReadTQueue >>= \case
-          -- -- Send initial requests to waiting room
-          -- Just (Request c fj) -> putOnHold c fj >> workOnJob
-          -- Anything else is good to go
-          Just j -> onCurrent (initJob j) >> workOnJob
-          -- If queue is empty, there is nothing left to do for now
-          Nothing -> return ()
+  -- Idle -> do -- No current job, try to pop from queue
+  --   i <- manId <$> get
+  --   ls <- lift.use $ store.locks
+  --   let releaseAll = 
+  --         if holding i ls
+  --            then do -- liftIO (putStrLn "Releasing locks...")
+  --                    mx <- grantMultiplex <$> get 
+  --                    -- if mx > 1
+  --                    --    then liftIO (putStrLn $ "Grant multiplex: " ++ show mx)
+  --                    --    else return ()
+  --                    modify (\m -> m { grantMultiplex = 0 })
+  --                    lift (emitOn' locks $ return . release i) >> return ()
+  --            else return ()
+  --   -- Try waiting room first
+  --   getWaiting >>= \case
+  --     Just j -> onCurrent (initJob j) >> workOnJob
+  --     Nothing -> do
+  --       -- If no one is ready in waiting room, take from main queue
+  --       aw <- anyWaiting
+  --       -- If no one is in the waiting room at all, release all locks
+  --       if not aw
+  --          then releaseAll
+  --          else return ()
+  --       manJobQueue <$> get >>= lstm . tryReadTQueue >>= \case
+  --         -- -- Send initial requests to waiting room
+  --         -- Just (Request c fj) -> putOnHold c fj >> workOnJob
+  --         -- Anything else is good to go
+  --         Just j -> onCurrent (initJob j) >> workOnJob
+  --         -- If queue is empty, there is nothing left to do for now
+  --         Nothing -> return ()
 
-advJob :: (ManC r h i c e s) => IO (Job c e s) -> ManM r h i c e s k ()
-advJob = (onCurrent . stepJob =<<) . liftIO
+-- advJob :: (ManC r h i c e s) => IO (Job i c e s) -> ManM r h i c e s k ()
+-- advJob = (onCurrent . stepJob =<<) . liftIO
 
 -- handleLockReqs :: (ManC r h i c e s) => ManM r h i c e s k ()
 -- handleLockReqs = do

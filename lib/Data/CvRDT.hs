@@ -24,6 +24,7 @@ module Data.CvRDT
   , storeMeta
   , resolver
   , incorp'
+  , incorpOn'
   , emit'
   , emitOn'
   -- * CvRDT sub-classes
@@ -129,6 +130,13 @@ incorp' ls t2 = do
      else do cvrState.ls .= t3
              updateMeta
              return (Just t3)
+
+incorpOn'
+  :: (CvRDT r s m, CvRDT r s1 m)
+  => Lens' s s1
+  -> (s1 -> m s1)
+  -> CvRepCmd r s k m (Maybe s1)
+incorpOn' ls f = incorp' ls =<< lift . f =<< use (store.ls)
 
 -- | Merge a new state into the replica's current state and broadcast
 -- the new current state (only if it has changed).  The return value
