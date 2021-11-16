@@ -9,6 +9,7 @@ module Data.CARD.Capconf
   , remoteG
   , remoteG'
   , consumeG
+  , dropG
   , transferG
   , acceptG
   , maskG

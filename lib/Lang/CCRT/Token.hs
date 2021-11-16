@@ -13,6 +13,7 @@ import Data.Aeson
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe (fromJust)
 import Data.Set (Set)
 import qualified Data.Set as Set
 import GHC.Generics (Generic)
@@ -70,9 +71,6 @@ instance (Ord i, Ord c, Monad m) => CvRDT r (TokenMap i c) m where
   cvempty _ = return $ mempty
   cvmerge _ q1 q2 = return $ q1 <> q2
 
-fromJust (Just a) = a
-fromJust Nothing = error "fromJust got Nothing."
-
 tokenReqHandler
   :: (Ord i, Ord c, Meet c, Monoid c, Split c)
   => i
@@ -105,7 +103,7 @@ tokenT i t =
   let c = ccrtRead t
   in CCRT'
        (tokenRequester i (ccrtRead t))
-       (tokenReqHandler i)
+       (const id)
        t
 
 initTokenMap :: (Ord c) => [(i,c)] -> TokenMap i c

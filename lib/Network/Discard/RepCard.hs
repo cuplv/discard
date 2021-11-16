@@ -350,8 +350,10 @@ tryTransact t = do
       e <- liftIO $ transactT t snap
       case consumeG i e cf of
         Just cf' -> do
-          lift (incorp' caps cf')
-
+          q <- lift.use $ store.rqs
+          let (q',cf'') = makeCleanup t e (q,cf')
+          lift (incorp' caps cf'')
+          lift (incorp' rqs q')
           issueEffect e
           return Nothing
         Nothing -> do

@@ -63,7 +63,7 @@ ccrtR r w f tmv =
 
 data CCRT' q i c e s m
   = CCRT' { ccrtRequest :: q -> Maybe q
-          , ccrtCleanup :: ReqHandler q i c
+          , ccrtCleanup :: e -> ReqHandler q i c
           , ccrtT :: CCRT c e s m
           }
 
@@ -87,7 +87,7 @@ checkRW i t cf = if checkWrite i t cf
 makeRequest :: CCRT' q i c e s m -> q -> Maybe q
 makeRequest t q = ccrtRequest t q
 
-makeCleanup :: CCRT' q i c e s m -> ReqHandler q i c
+makeCleanup :: CCRT' q i c e s m -> e -> ReqHandler q i c
 makeCleanup t a = ccrtCleanup t a
 
 transactT :: CCRT' q i c e s m -> s -> m e
@@ -118,4 +118,4 @@ runTR r h f = do
   atomically (takeTMVar tmv)
 
 noHandle :: CCRT c e s m -> CCRT' q i c e s m
-noHandle = CCRT' (const Nothing) id
+noHandle = CCRT' (const Nothing) (const id)
