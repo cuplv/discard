@@ -31,6 +31,9 @@ instance (Ord i) => Semigroup (Token i) where
            | tkSeqNum t1 > tkSeqNum t2 = t1
   Token n i rs1 <> Token _ _ rs2 = Token n i (Set.union rs1 rs2)
 
+initToken :: i -> Token i
+initToken i = Token 0 i Set.empty
+
 nextId :: (Ord i) => i -> Set i -> Maybe i
 nextId i ids =
   let ids' = Set.filter (> i) ids
@@ -66,6 +69,9 @@ instance (Ord i, Ord c, Monad m) => CvRDT r (TokenMap i c) m where
   cvempty _ = return $ mempty
   cvmerge _ q1 q2 = return $ q1 <> q2
 
+fromJust (Just a) = a
+fromJust Nothing = error "fromJust got Nothing."
+
 tokenReqHandler
   :: (Ord i, Ord c, Meet c, Monoid c, Split c)
   => i
@@ -76,7 +82,7 @@ tokenReqHandler i (TokenMap m) cf =
                   | otherwise = (Map.insert c t m,l)
       (m',l') = Map.foldrWithKey f (Map.empty,[]) m
 
-      f2 (c,i') = maskG i (i',c) . unmaskAllG' i c
+      f2 (c,i') = maskG i (i',c) . fromJust . transferG i (i',c) . unmaskAllG' i c
   in foldr f2 cf l'
 
 tokenRequester
@@ -96,3 +102,7 @@ tokenT i t =
        (tokenRequester i c)
        (tokenReqHandler i)
        t
+
+initTokenMap :: (Ord c) => [(i,c)] -> TokenMap i c
+initTokenMap is = TokenMap $
+  foldr (\(i,c) m -> Map.insert c (initToken i) m) Map.empty is

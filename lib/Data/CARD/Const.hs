@@ -58,7 +58,12 @@ instance (EffectDom e s) => EffectDom (ConstE e s) s where
 
 data ConstC c s
   = ConstC { setVals :: InfSet s, lowerC :: c }
-  deriving (Show,Eq,Ord,Generic)
+  deriving (Eq,Ord,Generic)
+
+instance (Ord s, Show c, Show s, BMeet c, Monoid c) => Show (ConstC c s) where
+  show c | uniC <=? c = "uniC"
+  show c | c <=? idC = "idC"
+  show (ConstC s c) | IS.isEmpty s = show c
 
 instance (ToJSON c, ToJSON s) => ToJSON (ConstC c s)
 instance (Ord s, ToJSON c, ToJSONKey c, ToJSON s, ToJSONKey s) => ToJSONKey (ConstC c s)
@@ -90,6 +95,10 @@ instance (Ord s, Split c) => Split (ConstC c s) where
 instance (Ord s, Meet c, Cap c e, EffectDom e s, Split c) => Cap (ConstC c s) (ConstE e s) where
   mincap (ConstE s) = ConstC (IS.singleton s) mempty
   mincap (ModifyE e) = ConstC IS.empty (mincap e)
+
+  weaken (ConstC s1 c1) (ConstC s2 c2)
+    | s2 <=? s1 = ModifyE <$> weaken c1 c2
+  weaken _ _ = Nothing
 
 constC :: (Ord s, Monoid c) => [s] -> ConstC c s
 constC ss = ConstC (IS.fromList ss) mempty

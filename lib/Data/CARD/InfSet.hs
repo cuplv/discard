@@ -9,6 +9,7 @@ module Data.CARD.InfSet
   , fromList
   , member
   , isSubsetOf
+  , isEmpty
   , union
   , intersection
   ) where
@@ -122,3 +123,7 @@ universal = Block Set.empty
 -- | Create an empty 'InfSet'.  This is the same as 'Data.Monoid.mempty'
 empty :: InfSet a
 empty = Allow Set.empty
+
+isEmpty :: (Eq a) => InfSet a -> Bool
+isEmpty (Allow s) | s == Set.empty = True
+isEmpty _ = False

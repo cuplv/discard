@@ -18,6 +18,10 @@ module Data.CARD.Counter
   , mulC
   , lowerBound
   , upperBound
+  , Bounds
+  , AddMul
+  , lowerBound'
+  , upperBound'
   ) where
 
 import Data.Aeson
@@ -129,7 +133,25 @@ data Bounds n
            , subBound :: Maybe n
            , mulBound :: Maybe n
            }
-  deriving (Show,Eq,Ord,Generic)
+  deriving (Eq,Ord,Generic)
+
+showBound :: (Show n) => Maybe n -> String
+showBound Nothing = "∞"
+showBound (Just n) = show n
+
+instance (Ord n, Num n, Show n) => Show (Bounds n) where
+  show b | uniC <=? b = "uniC"
+  show b | b <=? idC = "idC"
+  show (Bounds a s m) = 
+    (if not $ a <=?? Just addId
+        then "[+" ++ showBound a ++ "]"
+        else "")
+    ++ (if not $ s <=?? Just addId
+           then "[-" ++ showBound s ++ "]"
+           else "")
+    ++ (if not $ m <=?? Just mulId
+           then "[×" ++ showBound m ++ "]"
+           else "")
 
 instance (ToJSON n) => ToJSON (Bounds n) where
   toEncoding = genericToEncoding defaultOptions
@@ -165,9 +187,12 @@ upperBound' = Bounds (Just addId) Nothing (Just mulId)
 (+?) :: (Num n) => Maybe n -> Maybe n -> Maybe n
 (+?) a b = (+) <$> a <*> b
 
+(*?) :: (Num n) => Maybe n -> Maybe n -> Maybe n
+(*?) a b = (*) <$> a <*> b
+
 instance (Num n) => Semigroup (Bounds n) where
   Bounds a1 s1 m1 <> Bounds a2 s2 m2 =
-    Bounds (a1 +? a2) (s1 +? s2) (m1 +? m2)
+    Bounds (a1 +? a2) (s1 +? s2) (m1 *? m2)
 
 instance (Num n) => Monoid (Bounds n) where
   mempty = Bounds (Just addId) (Just addId) (Just mulId)
@@ -179,8 +204,8 @@ instance (Num n) => Monoid (Bounds n) where
 
 (<=??) :: (Num n, Ord n) => Maybe n -> Maybe n -> Bool
 (<=??) (Just a) (Just b) = a <= b
-(<=??) Nothing _ = False
 (<=??) _ Nothing = True
+(<=??) Nothing _ = False
 
 instance (Num n, Ord n) => Meet (Bounds n) where
   meet (Bounds a1 s1 m1) (Bounds a2 s2 m2) =
@@ -218,20 +243,21 @@ instance (Num n, Ord n) => Cap (Bounds n) (AddMul n) where
         (Nothing,Just s1) -> case s2 of
           Just s2 -> Just $ AddMul mulId (-s2)
           Nothing -> Nothing
+        (Nothing,Nothing) -> Just idE
 
-type CounterC n = UniversalC (ConstC (Bounds n) n)
+type CounterC n = ConstC (Bounds n) n
 
 addC :: (Num n, Ord n) => n -> CounterC n
-addC = LimitC . modifyC . addC'
+addC = modifyC . addC'
 
 subC :: (Num n, Ord n) => n -> CounterC n
-subC = LimitC . modifyC . subC'
+subC = modifyC . subC'
 
 mulC :: (Num n, Ord n) => n -> CounterC n
-mulC = LimitC . modifyC . mulC'
+mulC = modifyC . mulC'
 
 lowerBound :: (Num n) => CounterC n
-lowerBound = LimitC . modifyC $ lowerBound'
+lowerBound = modifyC $ lowerBound'
 
 upperBound :: (Num n) => CounterC n
-upperBound = LimitC . modifyC $ upperBound'
+upperBound = modifyC $ upperBound'

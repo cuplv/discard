@@ -11,6 +11,8 @@ import Bank
 import Data.CARD.Capconf
 import Data.CARD.Const
 import Data.CARD.Counter
+import Lang.CCRT
+import Lang.CCRT.Token
 
 import qualified Data.Text as Text
 
@@ -27,8 +29,10 @@ import Lens.Micro.Platform
 
 type CC = Capconf String (CounterC Int)
 
+type Q = TokenMap String (CounterC Int)
+
 data CustomEvent
-  = StoreUpdate (Int,CC)
+  = StoreUpdate (Q,Int,CC)
   | GotMessage
   deriving Show
 
@@ -43,20 +47,22 @@ data Name = CommandField deriving (Show,Read,Eq,Ord)
 mkForm :: CommandForm -> Form CommandForm e Name
 mkForm = newForm [ editTextField cfCommand CommandField (Just 1) ]
 
-type St e = (NetStat, (Int,CC), Form CommandForm e Name)
+type St e = (NetStat, (Q,Int,CC), Form CommandForm e Name)
 
 draw :: String -> St e -> [Widget Name]
-draw i (ns,(b,r),f) = 
+draw i (ns,(q,c,r),f) = 
   [C.vCenter $ 
    C.hCenter (Brick.str $ "[ node " ++ i ++ " ]")
    <=> C.hCenter form
    <=> C.hCenter store
    <=> C.hCenter status
-   <=> C.hCenter resStore]
+   <=> C.hCenter resStore
+   <=> C.hCenter rqs]
   where form = renderForm f
-        store = Brick.str $ "Balance: $" <> (show b)
+        store = Brick.str $ "Balance: $" <> (show c)
         status = Brick.str $ "Network status: " <> (show ns)
-        resStore = Brick.str $ "Caps: " <> show r
+        resStore = Brick.str $ "Caps: " <> show (remoteG' i r) <> " -- " <> show r
+        rqs = Brick.str $ "Rqs: " <> show q
 
 prettyRes :: [CounterE Int] -> String
 prettyRes (ModifyE e : es) = "+/- " ++ show (addAmt e) ++ " " ++ prettyRes es
@@ -71,17 +77,20 @@ app :: String
     -> App (St CustomEvent) CustomEvent Name
 app i cc = App 
   { appDraw = draw i
-  , appHandleEvent = \(ns,(c,r),f) ev -> case ev of
-      VtyEvent (V.EvResize {}) -> continue (ns,(c,r),f)
-      VtyEvent (V.EvKey V.KEsc []) -> halt (ns,(c,r),f)
+  , appHandleEvent = \(ns,(q,c,r),f) ev -> case ev of
+      VtyEvent (V.EvResize {}) -> continue (ns,(q,c,r),f)
+      VtyEvent (V.EvKey V.KEsc []) -> halt (ns,(q,c,r),f)
       VtyEvent (V.EvKey V.KEnter []) -> suspendAndResume $ do
         case Text.words ((formState f) ^.cfCommand) of
           ["dp",v] -> do 
             cc.bankOp i $ depositT (read . Text.unpack $ v)
-            return (ns,(c,r),mkForm $ CommandForm "")
+            return (ns,(q,c,r),mkForm $ CommandForm "")
           ["wd",v] -> do 
-            cc.bankOp i $ withdrawT (read . Text.unpack $ v)
-            return (ns,(c,r),mkForm $ CommandForm "")
+            rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
+            case rslt of
+              Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
+              Left e -> error $ "wd failed: " ++ show e
+
           -- ["audit"] -> do c' <- carol cc currentS
           --                 return (ns,(c',r),mkForm $ CommandForm "")
           -- ["prod",v] -> do
@@ -90,12 +99,12 @@ app i cc = App
           -- ["cons"] -> do
           --   carolAsync' cc withdrawR
           --   return (ns,(c,r),mkForm $ CommandForm "")
-          _ -> return (ns,(c,r),f)
-      AppEvent (StoreUpdate (c',r')) -> continue (ns,(c',r'),f)
-      AppEvent GotMessage -> continue (Online,(c,r),f)
+          _ -> return (ns,(q,c,r),f)
+      AppEvent (StoreUpdate (q',c',r')) -> continue (ns,(q',c',r'),f)
+      AppEvent GotMessage -> continue (Online,(q,c,r),f)
       _ -> do
         f' <- handleFormEvent ev f
-        continue (ns,(c,r),f')
+        continue (ns,(q,c,r),f')
   , appChooseCursor = focusRingCursor (formFocus . thd)
   , appStartEvent = return
   , appAttrMap = const theMap }
@@ -107,7 +116,7 @@ theMap = attrMap V.defAttr
   , (invalidFormInputAttr, V.white `on` V.red)
   , (focusedFormInputAttr, V.black `on` V.yellow) ]
 
-mkUpdateChan :: IO (BChan CustomEvent, (Int,CC) -> IO (), IO ())
+mkUpdateChan :: IO (BChan CustomEvent, (Q,Int,CC) -> IO (), IO ())
 mkUpdateChan = do
   chan <- newBChan 100
   return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
@@ -123,7 +132,7 @@ runUi nodeId s0 conn chan = do
         v <- V.mkVty =<< V.standardIOConfig
         V.setMode (V.outputIface v) V.Mouse True
         return v
-      f = (Offline, (s0,mempty), mkForm (CommandForm ""))
+      f = (Offline, (mempty,s0,mempty), mkForm (CommandForm ""))
   vty0 <- buildVty
   f' <- customMain vty0 buildVty (Just chan) (app nodeId conn) f
   return ()

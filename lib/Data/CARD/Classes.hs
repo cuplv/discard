@@ -263,12 +263,12 @@ instance (FromJSON c) => FromJSON (UniversalC c)
 instance (FromJSON c, FromJSONKey c) => FromJSONKey (UniversalC c)
 
 instance (Semigroup c) => Semigroup (UniversalC c) where
-  UniversalC <> c = c
-  c <> UniversalC = c
+  UniversalC <> c = UniversalC
+  c <> UniversalC = UniversalC
   LimitC c1 <> LimitC c2 = LimitC (c1 <> c2)
 
-instance (Semigroup c) => Monoid (UniversalC c) where
-  mempty = UniversalC
+instance (Monoid c) => Monoid (UniversalC c) where
+  mempty = LimitC mempty
 
 instance (Meet c) => Meet (UniversalC c) where
   UniversalC `meet` c = c

@@ -8,8 +8,7 @@ module Main where
 import System.IO
 import System.Directory
 import System.Exit
-import Data.List (genericLength)
-import Data.Either
+import Data.List (genericLength,delete)
 import Control.Monad
 import Control.Monad.Trans (MonadIO,liftIO)
 import Control.Concurrent (forkIO,ThreadId,threadDelay)
@@ -91,7 +90,7 @@ node = do
 
   if isOneshot conf
 
-     then do let settings0 = defaultDManagerSettings' 0
+     then do let settings0 = defaultDManagerSettings' mempty mempty 0
              (settings, await) <- awaitNetwork settings0 (Just 1000000)
              let script i man = do
                    let runner = runCCRT man
@@ -100,7 +99,7 @@ node = do
                      False -> putStrLn "Network timeout. Continuing in offline mode..."
                      _ -> return ()
                    -- s0 <- carol man (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
-                   s0 <- fromRight (-1) <$> runTR' balanceT
+                   s0 <- fromRight <$> runTR' balanceT
                    putStrLn $ "Starting balance: $" <> show s0 <> "."
                    -- d <- carol man $ deposit 10
                    d <- runTR' $ depositTR 10
@@ -108,16 +107,29 @@ node = do
                      Right n -> putStrLn $ "Deposited $" <> show n <> "."
                      Left e -> putStrLn (show e)
                    -- s1 <- carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
-                   s1 <- fromRight (-1) <$> runTR' balanceT
+                   s1 <- fromRight <$> runTR' balanceT
                    putStrLn $ "Ending balance: $" <> show s1 <> "."
              runNode' settings script
 
      else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
-             let onUpdate' (v,s) = onUpdate (v,getCaps s)
+             let onUpdate' (v,s) = onUpdate (getRqs s,v,getCaps s)
                  script i man = do
                    let runner = runCCRT man
-                   -- initStore <- (carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int))
-                   initStore <- fromRight (-1) <$> runTR runner (tokenT i) balanceT
+                   initStore <- fromRight
+                                <$> runTR runner (tokenT i) balanceT
                    runUi (nodeName conf) initStore (runCCRT man) eventChan
-                 settings = (defaultDManagerSettings' 0) { onUpdate = onUpdate', onGetBroadcast = onMessage }
+                 primary = head $ listIds net
+                 others = tail $ listIds net
+                 q0 = initTokens primary
+                 cf0 = initCapconf primary others
+                 
+                 settings = (defaultDManagerSettings' q0 cf0 0)
+                              { onUpdate = onUpdate'
+                              , onGetBroadcast = onMessage
+                              }
+             print (remoteG' (nodeName conf) cf0)
              runNode' settings script
+
+fromRight :: (Show e) => Either e a -> a
+fromRight (Right a) = a
+fromRight (Left e) = error $ "fromRight got Left " ++ show e

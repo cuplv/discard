@@ -15,6 +15,7 @@ module Data.CARD.Capconf
   , unmaskAllG
   , unmaskAllG'
   , summarizeG
+  , mkUniform
   ) where
 
 import Data.CARD.Classes
@@ -54,7 +55,18 @@ data Hist i c
          , histChanges :: [Change i c]
          , histInbox :: c
          }
-  deriving (Show,Eq,Ord,Generic)
+  deriving (Eq,Ord,Generic)
+
+instance (Show i, Show c, Meet c, Monoid c) => Show (Hist i c) where
+  show (Hist i _ c b) =
+    "(" ++ show i
+    ++ (case c of
+          [] -> ""
+          cs -> ", " ++ show cs)
+    ++ (if b <=? idC
+           then ""
+           else ", " ++ show b)
+    ++ ")"
 
 instance (ToJSON i, ToJSON c) => ToJSON (Hist i c)
 instance (FromJSON i, FromJSON c) => FromJSON (Hist i c)
@@ -133,7 +145,10 @@ getCap (Hist c _ ms a) = (<> a) <$> foldM change c ms
 
 data Capconf i c
   = Capconf { capConf :: Map i (Hist i c) }
-  deriving (Show,Eq,Ord,Generic)
+  deriving (Eq,Ord,Generic)
+
+instance (Show i, Show c, Meet c, Monoid c) => Show (Capconf i c) where
+  show (Capconf m) = show (Map.toList m)
 
 instance (ToJSON i, ToJSONKey i, ToJSON c) => ToJSON (Capconf i c)
 instance (Ord i, FromJSON i, FromJSONKey i, FromJSON c) => FromJSON (Capconf i c)
@@ -220,3 +235,8 @@ unmaskAllG' i c (Capconf m) = Capconf $ Map.map (unmaskMine' i c) m
 
 summarizeG :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> Capconf i c
 summarizeG i (Capconf m) = Capconf $ Map.adjust summarizeH i m
+
+mkUniform :: (Ord i, Monoid c) => c -> [i] -> Capconf i c
+mkUniform c is =
+  let f i m = Map.insert i (initHist c) m
+  in Capconf $ foldr f Map.empty is

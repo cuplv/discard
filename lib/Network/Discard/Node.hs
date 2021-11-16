@@ -7,7 +7,6 @@ module Network.Discard.Node
   ( Script
   , ManagerConn (..)
   , DManagerSettings (..)
-  , defaultDManagerSettings
   , defaultDManagerSettings'
   , awaitNetwork
   , runNode
@@ -91,7 +90,8 @@ runNode i ipfsAddr net dmsets script =
   fst <$> runNode' i ipfsAddr net val0 store0 dmsets script
   where val0 = baseStoreValue dmsets
         q0 = dmsBaseReqState dmsets
-        store0 = (q0, (mempty, Data.EventGraph.empty))
+        cf0 = dmsBaseCapconf dmsets
+        store0 = (q0, (cf0, Data.EventGraph.empty))
 
 -- | Run a node, loading the initial state from the given file (if it
 -- exists) and writing the final state to the file on exit (creating
