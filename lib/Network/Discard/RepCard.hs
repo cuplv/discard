@@ -351,7 +351,7 @@ tryTransact t = do
       case consumeG i e cf of
         Just cf' -> do
           lift (incorp' caps cf')
-          
+
           issueEffect e
           return Nothing
         Nothing -> do

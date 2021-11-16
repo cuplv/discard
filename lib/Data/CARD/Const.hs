@@ -96,6 +96,9 @@ instance (Ord s, Meet c, Cap c e, EffectDom e s, Split c) => Cap (ConstC c s) (C
   mincap (ConstE s) = ConstC (IS.singleton s) mempty
   mincap (ModifyE e) = ConstC IS.empty (mincap e)
 
+  undo (ConstE _) = idC
+  undo (ModifyE e) = modifyC (undo e)
+
   weaken (ConstC s1 c1) (ConstC s2 c2)
     | s2 <=? s1 = ModifyE <$> weaken c1 c2
   weaken _ _ = Nothing

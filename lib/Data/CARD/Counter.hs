@@ -232,11 +232,13 @@ instance (Num n, Ord n) => Split (Bounds n) where
 instance (Num n, Ord n) => Cap (Bounds n) (AddMul n) where
   mincap e = if addAmt e >= addId
                 then Bounds (Just $ addAmt e) (Just addId) (Just $ mulAmt e)
-                else Bounds (Just addId) (Just $ addAmt e) (Just $ mulAmt e)
+                else Bounds (Just addId)
+                            (Just $ negate (addAmt e))
+                            (Just $ mulAmt e)
 
   undo e = if addAmt e >= addId
               then Bounds (Just addId) (Just $ addAmt e) (Just mulId)
-              else Bounds (Just $ addAmt e) (Just addId) (Just mulId)
+              else Bounds (Just $ negate (addAmt e)) (Just addId) (Just mulId)
 
   weaken c1@(Bounds a1 s1 m1) c2@(Bounds a2 s2 m2)
     | uniC <=? c1 || c2 <=? idE = Just idE

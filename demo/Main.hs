@@ -130,7 +130,7 @@ node = do
                               , onGetBroadcast = onMessage
                               , dmsReqHandler = tokenReqHandler (nodeName conf)
                               }
-             print (remoteG' (nodeName conf) cf0)
+             -- print (remoteG' (nodeName conf) cf0)
              runNode' settings script
 
 fromRight :: (Show e) => Either e a -> a

@@ -94,21 +94,13 @@ app i cc = App
               Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
               Left e -> error $ "dp failed: " ++ show e ++ ", " ++ show (localG i r)
           ["wd",v] -> do
-            -- rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
-            -- case rslt of
-            --   Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
-            --   Left e -> error $ "wd failed: " ++ show e
             cc.bankOp i $ withdrawT (read . Text.unpack $ v)
             return (ns,(q,c,r),mkForm $ CommandForm "")
-
-          -- ["audit"] -> do c' <- carol cc currentS
-          --                 return (ns,(c',r),mkForm $ CommandForm "")
-          -- ["prod",v] -> do
-          --   cc.tokenT $ depositR (read . Text.unpack $ v)
-          --   return (ns,(c,r),mkForm $ CommandForm "")
-          -- ["cons"] -> do
-          --   carolAsync' cc withdrawR
-          --   return (ns,(c,r),mkForm $ CommandForm "")
+          ["wdr",v] -> do
+            rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
+            case rslt of
+              Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
+              Left e -> error $ "wd failed: " ++ show e ++ ", " ++ show (localG i r)
           _ -> return (ns,(q,c,r),f)
       AppEvent (StoreUpdate (q',c',r')) -> continue (ns,(q',c',r'),f)
       AppEvent GotMessage -> continue (Online,(q,c,r),f)

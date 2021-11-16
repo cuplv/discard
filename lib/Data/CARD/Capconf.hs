@@ -14,7 +14,6 @@ module Data.CARD.Capconf
   , maskG
   , unmaskAllG
   , unmaskAllG'
-  , summarizeG
   , mkUniform
   ) where
 
@@ -44,11 +43,6 @@ change a (Drop b) = split a b
 change a (Mask _ b) = Just (a `meet` b)
 change a Unmasked = Just a
 
--- -- | Sequence number says how many changes have been summarized,
--- -- capability is initial capability, and list of changes are changes
--- -- to that capability.
--- type Hist i c = (Int, c, [Change i c], c)
-
 data Hist i c
   = Hist { histInit :: c
          , histSummed :: Int
@@ -58,7 +52,7 @@ data Hist i c
   deriving (Eq,Ord,Generic)
 
 instance (Show i, Show c, Meet c, Monoid c) => Show (Hist i c) where
-  show (Hist i _ c b) =
+  show (Hist i n c b) =
     "(" ++ show i
     ++ (case c of
           [] -> ""
@@ -76,9 +70,9 @@ takeLonger l1 l2 | length l1 > length l2 = l1
 
 mergeH :: (Semigroup c) => Hist i c -> Hist i c -> Hist i c
 mergeH (Hist c1 n1 ms1 a1) h2@(Hist c2 n2 ms2 a2) | n1 < n2 =
-  mergeH (Hist c2 n2 (take (n2 - n1) ms1) a1) h2
+  mergeH (Hist c2 n2 (drop (n2 - n1) ms1) a1) h2
 mergeH h1@(Hist c1 n1 ms1 a1) (Hist c2 n2 ms2 a2) | n1 > n2 =
-  mergeH h1 (Hist c1 n1 (take (n1 - n2) ms2) a2)
+  mergeH h1 (Hist c1 n1 (drop (n1 - n2) ms2) a2)
 mergeH (Hist c1 n1 ms1 a1) (Hist _ _ ms2 a2) =
   Hist c1 n1 (takeLonger ms1 ms2) (a1 <> a2)
 
@@ -91,10 +85,11 @@ newChange :: (Meet c, Monoid c, Split c)
   => Change i c -> Hist i c -> Hist i c
 newChange m@(Mask _ _) (Hist c n ms a) = Hist c n (ms ++ [m]) a
 newChange Unmasked _ = error "Can't add a new Unmasked change."
-newChange m (Hist c n [] a) = case change c m of
-  Just c' -> Hist c' n [] a
-  Nothing -> error "Invalid capability newChange."
-newChange m (Hist c n ms a) = Hist c n (ms ++ [m]) a
+newChange m h = case summarizeH h of
+  Hist c n [] a -> case change c m of
+    Just c' -> Hist c' (n + 1) [] a
+    Nothing -> error "Invalid capability newChange."
+  Hist c n ms a -> Hist c n (ms ++ [m]) a
 
 -- | Accept transferred caps from inbox (if any).
 acceptH :: (Meet c, Monoid c, Split c) => Hist i c -> Hist i c
@@ -217,7 +212,7 @@ acceptG i (Capconf m) = Capconf $ Map.adjust acceptH i m
 -- This returns 'Maybe.Nothing' if the local capabilty was not
 -- sufficient.
 consumeG :: (Ord i, Cap c e) => i -> e -> Capconf i c -> Maybe (Capconf i c)
-consumeG i e = dropG i (mincap e)
+consumeG i e cf = gainG i (undo e) <$> dropG i (mincap e) cf
 
 -- | @maskG i1 (i2,c) g@ applies @c@ as a mask to @i1@'s capability,
 -- on a request from @i2@.  This function should be used at @i1@.
@@ -234,9 +229,6 @@ unmaskAllG i (Capconf m) = Capconf $ Map.map (unmaskMine i) m
 
 unmaskAllG' :: (Ord i, Eq c, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Capconf i c
 unmaskAllG' i c (Capconf m) = Capconf $ Map.map (unmaskMine' i c) m
-
-summarizeG :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> Capconf i c
-summarizeG i (Capconf m) = Capconf $ Map.adjust summarizeH i m
 
 mkUniform :: (Ord i, Monoid c) => c -> [i] -> Capconf i c
 mkUniform c is =
