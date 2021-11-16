@@ -85,7 +85,7 @@ tokenReqHandler i (TokenMap m, cf) =
       (m',l') = Map.foldrWithKey f (Map.empty,[]) m
 
       f2 (c,i') = maskG i (i',c) . unmaskAllG' i c
-  in (TokenMap m, foldr f2 cf l')
+  in (TokenMap m', foldr f2 cf l')
 
 tokenRequester
   :: (Ord i, Ord c, Meet c, Monoid c)

@@ -295,7 +295,7 @@ handleRequests = do
   cf <- lift.use $ store.caps
   let (r',cf') = handle (r,cf)
   lift $ incorp' caps cf'
-  lift $ incorp' rqs r
+  lift $ incorp' rqs r'
   if r /= r' || cf /= cf'
      then bcast'
      else return ()
