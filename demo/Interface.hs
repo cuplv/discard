@@ -8,6 +8,10 @@ module Interface (mkUpdateChan, runUi) where
 
 import Bank
 
+import Data.CARD.Capconf
+import Data.CARD.Const
+import Data.CARD.Counter
+
 import qualified Data.Text as Text
 
 import Brick hiding (str)
@@ -21,9 +25,12 @@ import qualified Brick.Widgets.Edit as E
 
 import Lens.Micro.Platform
 
-type Ress' = Ress String (CounterE Int)
+type CC = Capconf String (CounterC Int)
 
-data CustomEvent = StoreUpdate (Int,Ress') | GotMessage deriving Show
+data CustomEvent
+  = StoreUpdate (Int,CC)
+  | GotMessage
+  deriving Show
 
 data CommandForm = CommandForm { _cfCommand :: Text.Text } deriving Show
 
@@ -36,7 +43,7 @@ data Name = CommandField deriving (Show,Read,Eq,Ord)
 mkForm :: CommandForm -> Form CommandForm e Name
 mkForm = newForm [ editTextField cfCommand CommandField (Just 1) ]
 
-type St e = (NetStat, (Int,Ress'), Form CommandForm e Name)
+type St e = (NetStat, (Int,CC), Form CommandForm e Name)
 
 draw :: String -> St e -> [Widget Name]
 draw i (ns,(b,r),f) = 
@@ -49,7 +56,7 @@ draw i (ns,(b,r),f) =
   where form = renderForm f
         store = Brick.str $ "Balance: $" <> (show b)
         status = Brick.str $ "Network status: " <> (show ns)
-        resStore = Brick.str $ "Res: " <> prettyRes (resLookup i r)
+        resStore = Brick.str $ "Caps: " <> show r
 
 prettyRes :: [CounterE Int] -> String
 prettyRes (ModifyE e : es) = "+/- " ++ show (addAmt e) ++ " " ++ prettyRes es
@@ -59,9 +66,8 @@ prettyRes [] = ""
 
 thd (_,_,a) = a
 
-app :: (CCarrier c (CounterC Int) (CounterE Int) Int IO) 
-    => String
-    -> c
+app :: String
+    -> (BankOp' String IO -> IO ())
     -> App (St CustomEvent) CustomEvent Name
 app i cc = App 
   { appDraw = draw i
@@ -71,19 +77,19 @@ app i cc = App
       VtyEvent (V.EvKey V.KEnter []) -> suspendAndResume $ do
         case Text.words ((formState f) ^.cfCommand) of
           ["dp",v] -> do 
-            carolAsync' cc $ deposit (read . Text.unpack $ v)
+            cc.bankOp i $ depositT (read . Text.unpack $ v)
             return (ns,(c,r),mkForm $ CommandForm "")
           ["wd",v] -> do 
-            carolAsync' cc $ withdraw (read . Text.unpack $ v)
+            cc.bankOp i $ withdrawT (read . Text.unpack $ v)
             return (ns,(c,r),mkForm $ CommandForm "")
-          ["audit"] -> do c' <- carol cc currentS
-                          return (ns,(c',r),mkForm $ CommandForm "")
-          ["prod",v] -> do
-            carolAsync' cc $ depositR (read . Text.unpack $ v)
-            return (ns,(c,r),mkForm $ CommandForm "")
-          ["cons"] -> do
-            carolAsync' cc withdrawR
-            return (ns,(c,r),mkForm $ CommandForm "")
+          -- ["audit"] -> do c' <- carol cc currentS
+          --                 return (ns,(c',r),mkForm $ CommandForm "")
+          -- ["prod",v] -> do
+          --   cc.tokenT $ depositR (read . Text.unpack $ v)
+          --   return (ns,(c,r),mkForm $ CommandForm "")
+          -- ["cons"] -> do
+          --   carolAsync' cc withdrawR
+          --   return (ns,(c,r),mkForm $ CommandForm "")
           _ -> return (ns,(c,r),f)
       AppEvent (StoreUpdate (c',r')) -> continue (ns,(c',r'),f)
       AppEvent GotMessage -> continue (Online,(c,r),f)
@@ -101,12 +107,17 @@ theMap = attrMap V.defAttr
   , (invalidFormInputAttr, V.white `on` V.red)
   , (focusedFormInputAttr, V.black `on` V.yellow) ]
 
-mkUpdateChan :: IO (BChan CustomEvent, (Int,Ress') -> IO (), IO ())
+mkUpdateChan :: IO (BChan CustomEvent, (Int,CC) -> IO (), IO ())
 mkUpdateChan = do
   chan <- newBChan 100
   return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
 
-runUi :: (CCarrier c (CounterC Int) (CounterE Int) Int IO) => String -> Int -> c -> BChan CustomEvent -> IO ()
+runUi
+  :: String
+  -> Int
+  -> (BankOp' String IO -> IO ())
+  -> BChan CustomEvent
+  -> IO ()
 runUi nodeId s0 conn chan = do
   let buildVty = do
         v <- V.mkVty =<< V.standardIOConfig

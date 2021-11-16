@@ -9,6 +9,7 @@ import System.IO
 import System.Directory
 import System.Exit
 import Data.List (genericLength)
+import Data.Either
 import Control.Monad
 import Control.Monad.Trans (MonadIO,liftIO)
 import Control.Concurrent (forkIO,ThreadId,threadDelay)
@@ -21,14 +22,15 @@ import Options.Applicative
 import System.Random
 import Data.Time.Clock
 
-import Lang.Carol
 import Data.CARD.Counter
-import Lang.Carol.Bank
 import Network.Discard
 import Data.EventGraph
 import Data.CARD.Store
 import Data.EventGraph.Ipfs (IpfsEG)
+import Lang.CCRT
+import Lang.CCRT.Token
 
+import Bank
 import Interface
 
 main :: IO ()
@@ -85,31 +87,37 @@ node = do
         Just sfile -> 
           runNodeFile (nodeName conf) (localAddr conf) net sfile settings script
         Nothing -> do
-          runNode (nodeName conf) (Just [lowerBound,upperBound]) (localAddr conf) net settings script
+          runNode (nodeName conf) (localAddr conf) net settings script
 
   if isOneshot conf
 
      then do let settings0 = defaultDManagerSettings' 0
              (settings, await) <- awaitNetwork settings0 (Just 1000000)
              let script i man = do
+                   let runner = runCCRT man
+                   let runTR' = runTR runner (tokenT i)
                    await >>= \case
                      False -> putStrLn "Network timeout. Continuing in offline mode..."
                      _ -> return ()
-                   s0 <- carol man (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
+                   -- s0 <- carol man (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
+                   s0 <- fromRight (-1) <$> runTR' balanceT
                    putStrLn $ "Starting balance: $" <> show s0 <> "."
-                   d <- carol man $ deposit 10
+                   -- d <- carol man $ deposit 10
+                   d <- runTR' $ depositTR 10
                    case d of
                      Right n -> putStrLn $ "Deposited $" <> show n <> "."
-                     Left e -> putStrLn e
-                   s1 <- carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
+                     Left e -> putStrLn (show e)
+                   -- s1 <- carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
+                   s1 <- fromRight (-1) <$> runTR' balanceT
                    putStrLn $ "Ending balance: $" <> show s1 <> "."
              runNode' settings script
 
      else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
-             let onUpdate' (v,s) = onUpdate (v,getRess s)
-                 script i man = do 
-                   initStore <- (carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int))
-                   runUi (nodeName conf) initStore man eventChan
-                 settings = (defaultDManagerSettings' 0) { onUpdate = onUpdate'                                                , onGetBroadcast = onMessage }
+             let onUpdate' (v,s) = onUpdate (v,getCaps s)
+                 script i man = do
+                   let runner = runCCRT man
+                   -- initStore <- (carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int))
+                   initStore <- fromRight (-1) <$> runTR runner (tokenT i) balanceT
+                   runUi (nodeName conf) initStore (runCCRT man) eventChan
+                 settings = (defaultDManagerSettings' 0) { onUpdate = onUpdate', onGetBroadcast = onMessage }
              runNode' settings script
-

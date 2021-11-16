@@ -23,6 +23,9 @@ data Token i
           }
   deriving (Show,Eq,Ord,Generic)
 
+instance (Ord i, ToJSON i) => ToJSON (Token i)
+instance (Ord i, FromJSON i) => FromJSON (Token i)
+
 instance (Ord i) => Semigroup (Token i) where
   t1 <> t2 | tkSeqNum t1 < tkSeqNum t2 = t2
            | tkSeqNum t1 > tkSeqNum t2 = t1
@@ -48,6 +51,9 @@ requestToken i t@(Token n o rs) | i == o = t
 data TokenMap i c
   = TokenMap { tokens :: Map c (Token i) }
   deriving (Show,Eq,Ord,Generic)
+
+instance (Ord i, Ord c, ToJSON i, ToJSON c, ToJSONKey c) => ToJSON (TokenMap i c)
+instance (Ord i, Ord c, FromJSON i, FromJSON c, FromJSONKey c) => FromJSON (TokenMap i c)
 
 instance (Ord i, Ord c) => Semigroup (TokenMap i c) where
   TokenMap m1 <> TokenMap m2 =

@@ -7,6 +7,8 @@ module Data.CARD.Store
   , caps
   , hist
   , rqs
+  , getRqs
+  , getCaps
   , histAppend
   -- * Convenient re-exports
   , module Data.CARD
@@ -47,6 +49,12 @@ type Store q h i c e = (q, (Capconf i c, Hist h i e))
 
 rqs :: Lens' (Store q h i c e) q
 rqs = _1
+
+getRqs :: Store q h i c e -> q
+getRqs = view rqs
+
+getCaps :: Store q h i c e -> Capconf i c
+getCaps = view caps
 
 -- | Lens to the 'Capconf' state
 caps :: Lens' (Store q h i c e) (Capconf i c)

@@ -13,6 +13,7 @@ module Network.Discard.Node
   , runNode
   , runNode'
   , runNodeFile
+  , runCCRT
   ) where
 
 import System.IO

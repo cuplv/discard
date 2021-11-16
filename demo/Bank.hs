@@ -16,6 +16,12 @@ depositT n =
     (addC n) -- We need to be able to add n.
     (const $ return (addE n)) -- We simply add n.
 
+depositTR n =
+  ccrtR
+  uniC
+  (addC n)
+  (const $ return (addE n,n))
+
 withdrawT :: (Monad m) => Int -> BankOp m
 withdrawT n =
   ccrt
@@ -24,6 +30,9 @@ withdrawT n =
     (\s -> if s >= n
               then return $ subE n
               else return $ idE)
+
+balanceT :: CCRTR (CounterC Int) (CounterE Int) Int Int
+balanceT = ccrtR uniC idC (\s -> return (idE,s))
 
 bankOp :: (Ord i, Monad m) => i -> BankOp m -> BankOp' i m
 bankOp = tokenT
