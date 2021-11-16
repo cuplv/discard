@@ -85,11 +85,13 @@ app i cc = App
           ["dp",v] -> do 
             cc.bankOp i $ depositT (read . Text.unpack $ v)
             return (ns,(q,c,r),mkForm $ CommandForm "")
-          ["wd",v] -> do 
-            rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
-            case rslt of
-              Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
-              Left e -> error $ "wd failed: " ++ show e
+          ["wd",v] -> do
+            -- rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
+            -- case rslt of
+            --   Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
+            --   Left e -> error $ "wd failed: " ++ show e
+            cc.bankOp i $ withdrawT (read . Text.unpack $ v)
+            return (ns,(q,c,r),mkForm $ CommandForm "")
 
           -- ["audit"] -> do c' <- carol cc currentS
           --                 return (ns,(c',r),mkForm $ CommandForm "")

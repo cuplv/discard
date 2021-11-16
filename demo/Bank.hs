@@ -25,6 +25,15 @@ depositTR n =
     (addC n)
     (const $ return (addE n,n))
 
+withdrawT :: (Monad m) => Int -> BankOp m
+withdrawT n =
+  ccrt
+    lowerBound
+    (subC n)
+    (\s -> if s >= n
+              then return (subE n)
+              else return idE)
+
 -- withdrawTR :: (Monad m) => Int -> BankOp m
 withdrawTR n =
   ccrtR
