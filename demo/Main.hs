@@ -121,11 +121,14 @@ node = do
                  primary = head $ listIds net
                  others = tail $ listIds net
                  q0 = initTokens primary
-                 cf0 = initCapconf primary others
-                 
+                 cf0 = if nodeName conf == primary
+                          then initCapconf primary others
+                          else mempty
+
                  settings = (defaultDManagerSettings' q0 cf0 0)
                               { onUpdate = onUpdate'
                               , onGetBroadcast = onMessage
+                              , dmsReqHandler = tokenReqHandler (nodeName conf)
                               }
              print (remoteG' (nodeName conf) cf0)
              runNode' settings script

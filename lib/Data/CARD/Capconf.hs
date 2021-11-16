@@ -189,11 +189,13 @@ remoteG' :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> c
 remoteG' i cf = Map.foldr (<>) mempty (remoteG i cf)
 
 gainG :: (Ord i, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Capconf i c
+gainG _ c cf | c <=? idC = cf
 gainG i c (Capconf m) = case Map.lookup i m of
   Just h -> Capconf $ Map.insert i (newChange (Gain c) h) m
   Nothing -> Capconf $ Map.insert i (initHist c) m
 
 dropG :: (Ord i, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Maybe (Capconf i c)
+dropG _ c cf | c <=? idC = Just cf
 dropG i c (Capconf m) =
   if c <=? localG i (Capconf m)
      then Just (Capconf (Map.adjust (newChange (Drop c)) i m))

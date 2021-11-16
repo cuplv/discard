@@ -77,24 +77,24 @@ tokenReqHandler
   :: (Ord i, Ord c, Meet c, Monoid c, Split c)
   => i
   -> ReqHandler (TokenMap i c) i c
-tokenReqHandler i (TokenMap m) cf =
+tokenReqHandler i (TokenMap m, cf) =
   let f c t (m,l) | tkOwner t == i = case passToken t of
                       (t',Just i') -> (Map.insert c t' m, (c,i'):l)
+                      (t,Nothing) -> (Map.insert c t m, l)
                   | otherwise = (Map.insert c t m,l)
       (m',l') = Map.foldrWithKey f (Map.empty,[]) m
 
-      f2 (c,i') = maskG i (i',c) . fromJust . transferG i (i',c) . unmaskAllG' i c
-  in foldr f2 cf l'
+      f2 (c,i') = maskG i (i',c) . unmaskAllG' i c
+  in (TokenMap m, foldr f2 cf l')
 
 tokenRequester
   :: (Ord i, Ord c, Meet c, Monoid c)
   => i
-  -> c -- Write req
   -> c -- Read req
   -> TokenMap i c
   -> Maybe (TokenMap i c)
-tokenRequester i cw cr (TokenMap m) =
-  case List.find (\c' -> cw <=? c' && (meet cr c') <=? idC) (Map.keys m) of
+tokenRequester i cr (TokenMap m) =
+  case List.find (\c' -> cr <=? c') (Map.keys m) of
     Just c' -> case Map.lookup c' m of
       Just t -> Just . TokenMap $ (Map.insert c' (requestToken i t) m)
       Nothing -> Nothing
@@ -102,9 +102,9 @@ tokenRequester i cw cr (TokenMap m) =
 
 tokenT :: (Ord i, Ord c, Cap c e) => i -> CCRT c e s m -> CCRT' (TokenMap i c) i c e s m
 tokenT i t =
-  let c = ccrtWrite t <> ccrtRead t
+  let c = ccrtRead t
   in CCRT'
-       (tokenRequester i (ccrtWrite t) (ccrtRead t))
+       (tokenRequester i (ccrtRead t))
        (tokenReqHandler i)
        t
 

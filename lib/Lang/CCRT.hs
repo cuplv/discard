@@ -37,7 +37,7 @@ data CCRTFail c e
   | WriteError e
   deriving (Show,Eq,Ord)
 
-data Unsat c = UnsatRead c | UnsatWrite c deriving (Show,Eq,Ord)
+data Unsat c = UnsatRead c c | UnsatWrite c c deriving (Show,Eq,Ord)
 
 data CCRT c e s m
   = CCRT { ccrtRead :: c
@@ -67,9 +67,9 @@ data CCRT' q i c e s m
           , ccrtT :: CCRT c e s m
           }
 
-type ReqHandler q i c = q -> Capconf i c -> Capconf i c
+type ReqHandler q i c = (q, Capconf i c) -> (q, Capconf i c)
 
-emptyReqHandler = \_ -> id
+emptyReqHandler = id
 
 checkRead :: (Ord i, Cap c e) => i -> CCRT' q i c e s m -> Capconf i c -> Maybe e
 checkRead i t cf = weaken (ccrtRead $ ccrtT t) (remoteG' i cf)
@@ -81,14 +81,14 @@ checkRW :: (Ord i, Cap c e) => i -> CCRT' q i c e s m -> Capconf i c -> Either (
 checkRW i t cf = if checkWrite i t cf
   then case checkRead i t cf of
     Just e -> Right e
-    Nothing -> Left (UnsatRead (ccrtRead $ ccrtT t))
-  else Left (UnsatWrite (ccrtWrite $ ccrtT t))
+    Nothing -> Left (UnsatRead (ccrtRead $ ccrtT t) (remoteG' i cf))
+  else Left (UnsatWrite (ccrtWrite $ ccrtT t) (localG i cf))
 
 makeRequest :: CCRT' q i c e s m -> q -> Maybe q
 makeRequest t q = ccrtRequest t q
 
-makeCleanup :: CCRT' q i c e s m -> q -> Capconf i c -> Capconf i c
-makeCleanup t q cf = ccrtCleanup t q cf
+makeCleanup :: CCRT' q i c e s m -> ReqHandler q i c
+makeCleanup t a = ccrtCleanup t a
 
 transactT :: CCRT' q i c e s m -> s -> m e
 transactT t s = (ccrtTrans $ ccrtT t) s
@@ -118,4 +118,4 @@ runTR r h f = do
   atomically (takeTMVar tmv)
 
 noHandle :: CCRT c e s m -> CCRT' q i c e s m
-noHandle = CCRT' (const Nothing) (const id)
+noHandle = CCRT' (const Nothing) id

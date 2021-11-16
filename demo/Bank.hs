@@ -7,8 +7,6 @@ import Data.CARD.Counter
 import Lang.CCRT
 import Lang.CCRT.Token
 
-import Data.Map as Map
-
 type BankOp = CCRT (CounterC Int) (CounterE Int) Int
 type BankOp' i = CCRT' (TokenMap i (CounterC Int)) i (CounterC Int) (CounterE Int) Int
 
@@ -50,7 +48,9 @@ bankOp :: (Ord i, Monad m) => i -> BankOp m -> BankOp' i m
 bankOp = tokenT
 
 initCapconf :: (Ord i) => i -> [i] -> Capconf i (CounterC Int)
-initCapconf i is = mkUniform uniC [i] <> mkUniform lowerBound is
+initCapconf i is = 
+  foldr (\i' -> maskG i' (i,lowerBound)) (mkUniform uniC (i:is)) is
+  -- mkUniform uniC (i:is)
 
 initTokens :: i -> TokenMap i (CounterC Int)
-initTokens i = initTokenMap [(i,upperBound)]
+initTokens i = initTokenMap [(i,lowerBound)]

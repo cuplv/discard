@@ -222,7 +222,12 @@ instance (Num n, Ord n) => Split (Bounds n) where
                             | otherwise = Nothing
         f Nothing _ = Just Nothing
         f _ Nothing = Nothing
-    in Bounds <$> f a1 a2 <*> f s1 s2 <*> f m1 m2
+
+        f2 (Just x) (Just y) | x >= y = Just $ Just $ mulId
+                             | otherwise = Nothing
+        f2 Nothing _ = Just Nothing
+        f2 _ Nothing = Nothing
+    in Bounds <$> f a1 a2 <*> f s1 s2 <*> f2 m1 m2
 
 instance (Num n, Ord n) => Cap (Bounds n) (AddMul n) where
   mincap e = if addAmt e >= addId
@@ -233,8 +238,8 @@ instance (Num n, Ord n) => Cap (Bounds n) (AddMul n) where
               then Bounds (Just addId) (Just $ addAmt e) (Just mulId)
               else Bounds (Just $ addAmt e) (Just addId) (Just mulId)
 
-  weaken (Bounds a1 s1 m1) c@(Bounds a2 s2 m2)
-    | c == uniC = Just idE
+  weaken c1@(Bounds a1 s1 m1) c2@(Bounds a2 s2 m2)
+    | uniC <=? c1 || c2 <=? idE = Just idE
     | m2 == Just mulId = case (a1,s1) of
         (Just _,Just _) -> Nothing
         (Just a1,Nothing) -> case a2 of
@@ -244,6 +249,7 @@ instance (Num n, Ord n) => Cap (Bounds n) (AddMul n) where
           Just s2 -> Just $ AddMul mulId (-s2)
           Nothing -> Nothing
         (Nothing,Nothing) -> Just idE
+    | otherwise = Nothing
 
 type CounterC n = ConstC (Bounds n) n
 

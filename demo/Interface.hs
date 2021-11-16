@@ -61,7 +61,10 @@ draw i (ns,(q,c,r),f) =
   where form = renderForm f
         store = Brick.str $ "Balance: $" <> (show c)
         status = Brick.str $ "Network status: " <> (show ns)
-        resStore = Brick.str $ "Caps: " <> show (remoteG' i r) <> " -- " <> show r
+        resStore = Brick.str $ 
+          "R(" <> show (remoteG' i r) 
+          <> ") W(" <> show (localG i r)
+          <> ") -- " <> show r
         rqs = Brick.str $ "Rqs: " <> show q
 
 prettyRes :: [CounterE Int] -> String
@@ -85,6 +88,11 @@ app i cc = App
           ["dp",v] -> do 
             cc.bankOp i $ depositT (read . Text.unpack $ v)
             return (ns,(q,c,r),mkForm $ CommandForm "")
+          ["dpr",v] -> do
+            rslt <- runTR cc (bankOp i) $ depositTR (read . Text.unpack $ v)
+            case rslt of
+              Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
+              Left e -> error $ "dp failed: " ++ show e ++ ", " ++ show (localG i r)
           ["wd",v] -> do
             -- rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
             -- case rslt of

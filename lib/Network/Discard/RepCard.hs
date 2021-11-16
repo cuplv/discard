@@ -290,11 +290,15 @@ handleWaiting = do
 
 handleRequests :: (ManC r q h i c e s) => ManM r q h i c e s k ()
 handleRequests = do
-  h <- manReqHandler <$> get
+  handle <- manReqHandler <$> get
   r <- lift.use $ store.rqs
   cf <- lift.use $ store.caps
-  lift $ incorp' caps (h r cf)
-  return ()
+  let (r',cf') = handle (r,cf)
+  lift $ incorp' caps cf'
+  lift $ incorp' rqs r
+  if r /= r' || cf /= cf'
+     then bcast'
+     else return ()
 
 anyWaiting :: (ManC r q h i c e s) => ManM r q h i c e s k Bool
 anyWaiting = manWaitingRoom <$> get >>= \case
@@ -391,7 +395,7 @@ upWithSumms stateV upCb upCbVal upCbLocks r valBase store' summs = do
   (val,store) <- lstm$ readTVar stateV
   val' <- evalHist r valBase (store'^.hist) summs
   lstm $ swapTVar stateV (val',store')
-  upCb (val',store)
+  upCb (val',store')
   if val /= val'
      then upCbVal val'
      else return ()
