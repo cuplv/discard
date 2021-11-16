@@ -13,6 +13,7 @@ module Data.CARD.Capconf
   , acceptG
   , maskG
   , unmaskAllG
+  , unmaskAllG'
   , summarizeG
   ) where
 
@@ -97,6 +98,14 @@ unmaskMine :: (Eq i) => i -> Hist i c -> Hist i c
 unmaskMine i (Hist c n ms a) =
   let f = \case
              Mask j c | j == i -> Unmasked
+             m -> m
+  in Hist c n (map f ms) a
+
+-- | Remove masks held by the @i@ replica, which match the given @c@.
+unmaskMine' :: (Eq i, Eq c) => i -> c -> Hist i c -> Hist i c
+unmaskMine' i cu (Hist c n ms a) =
+  let f = \case
+             Mask j c | j == i && c == cu -> Unmasked
              m -> m
   in Hist c n (map f ms) a
 
@@ -205,6 +214,9 @@ maskG i1 (i2,c) (Capconf m) = case Map.lookup i1 m of
 -- transaction.
 unmaskAllG :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> Capconf i c
 unmaskAllG i (Capconf m) = Capconf $ Map.map (unmaskMine i) m
+
+unmaskAllG' :: (Ord i, Eq c, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Capconf i c
+unmaskAllG' i c (Capconf m) = Capconf $ Map.map (unmaskMine' i c) m
 
 summarizeG :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> Capconf i c
 summarizeG i (Capconf m) = Capconf $ Map.adjust summarizeH i m

@@ -22,16 +22,11 @@ library
                      , Data.CARD.InfSet
                      -- , Data.CARD.Map
                      -- , Data.CARD.Maybe
-                     -- , Data.CARD.Locks
-                     -- , Data.CARD.Res
                      , Data.CARD.Store
                      , Data.CvRDT
                      , Data.LamportClock
                      , Lang.CCRT
-                     -- , Lang.Carol
-                     -- , Lang.Carol.Internal
-                     -- , Lang.Carol.Bank
-                     -- , Lang.Carol.Warehouse
+                     , Lang.CCRT.Token
                      , Network.Discard
                      -- , Network.Discard.Experiment
                      -- , Network.Discard.Experiment2
@@ -73,7 +68,7 @@ library
 
 executable discard-demo
   main-is:             Main.hs
-  other-modules:        Interface
+  other-modules:       Interface, Bank
   build-depends:       base >=4.10 && <4.15
                      , discard
                      , mtl

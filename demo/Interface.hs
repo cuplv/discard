@@ -6,6 +6,8 @@
 
 module Interface (mkUpdateChan, runUi) where
 
+import Bank
+
 import qualified Data.Text as Text
 
 import Brick hiding (str)
@@ -18,12 +20,6 @@ import qualified Graphics.Vty as V
 import qualified Brick.Widgets.Edit as E
 
 import Lens.Micro.Platform
-
-import Data.CARD
-import Data.CARD.Counter
-import Data.CARD.Store
-import Lang.Carol
-import Lang.Carol.Bank
 
 type Ress' = Ress String (CounterE Int)
 

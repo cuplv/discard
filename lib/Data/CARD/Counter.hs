@@ -191,28 +191,33 @@ instance (Num n, Ord n) => Meet (Bounds n) where
 instance (Num n, Ord n) => BMeet (Bounds n) where
   meetId = Bounds Nothing Nothing Nothing
 
--- instance Semigroup Bounds where
---   ExactValue <> _ = ExactValue
---   _ <> ExactValue = ExactValue
---   LowerBound <> UpperBound = ExactValue
---   UpperBound <> LowerBound = ExactValue
---   a <> _ = a
+instance (Num n, Ord n) => Split (Bounds n) where
+  split (Bounds a1 s1 m1) (Bounds a2 s2 m2) =
+    let f (Just x) (Just y) | x >= y = Just $ Just $ x - y
+                            | otherwise = Nothing
+        f Nothing _ = Just Nothing
+        f _ Nothing = Nothing
+    in Bounds <$> f a1 a2 <*> f s1 s2 <*> f m1 m2
 
--- instance Absorbing Bounds where
---   absorb = ExactValue
+instance (Num n, Ord n) => Cap (Bounds n) (AddMul n) where
+  mincap e = if addAmt e >= addId
+                then Bounds (Just $ addAmt e) (Just addId) (Just $ mulAmt e)
+                else Bounds (Just addId) (Just $ addAmt e) (Just $ mulAmt e)
 
--- instance (Num n, Ord n) => StateOrd Bounds n where
---   stateLe ExactValue = (==) -- EQV
---   stateLe LowerBound = (<=) -- LEQ
---   stateLe UpperBound = (>=) -- GEQ
+  undo e = if addAmt e >= addId
+              then Bounds (Just addId) (Just $ addAmt e) (Just mulId)
+              else Bounds (Just $ addAmt e) (Just addId) (Just mulId)
 
--- instance (Num n, Ord n) => EffectOrd Bounds (AddMul n) where
---   effectLe c e1 e2 =
---     additive e1
---     && additive e2
---     && stateLe c (addAmt e1) (addAmt e2)
-
--- instance (Num n, Ord n) => Camo Bounds (AddMul n) n
+  weaken (Bounds a1 s1 m1) c@(Bounds a2 s2 m2)
+    | c == uniC = Just idE
+    | m2 == Just mulId = case (a1,s1) of
+        (Just _,Just _) -> Nothing
+        (Just a1,Nothing) -> case a2 of
+          Just a2 -> Just $ AddMul mulId a2
+          Nothing -> Nothing
+        (Nothing,Just s1) -> case s2 of
+          Just s2 -> Just $ AddMul mulId (-s2)
+          Nothing -> Nothing
 
 type CounterC n = UniversalC (ConstC (Bounds n) n)
 

@@ -1,7 +1,8 @@
 module Lang.CCRT
-  ( CCRT
-  , CCRT'
+  ( CCRT (..)
+  , CCRT' (..)
   , ReqHandler
+  , ccrt
   , emptyReqHandler
   , checkRW
   , makeRequest
@@ -30,13 +31,16 @@ data Unsat c = UnsatRead c | UnsatWrite c
 data CCRT c e s m
   = CCRT { ccrtRead :: c
          , ccrtWrite :: c
-         , ccrtTrans :: s -> m e
          , ccrtFail :: CCRTFail c e -> m ()
+         , ccrtTrans :: s -> m e
          }
+
+ccrt :: (Monad m) => c -> c -> (s -> m e) -> CCRT c e s m
+ccrt r w f = CCRT r w (const $ return ()) f
 
 data CCRT' q i c e s m
   = CCRT' { ccrtRequest :: q -> Maybe q
-          , ccrtCleanup :: Capconf i c -> Capconf i c
+          , ccrtCleanup :: ReqHandler q i c
           , ccrtT :: CCRT c e s m
           }
 
@@ -60,8 +64,8 @@ checkRW i t cf = if checkWrite i t cf
 makeRequest :: CCRT' q i c e s m -> q -> Maybe q
 makeRequest t q = ccrtRequest t q
 
-makeCleanup :: CCRT' q i c e s m -> Capconf i c -> Capconf i c
-makeCleanup t cf = ccrtCleanup t cf
+makeCleanup :: CCRT' q i c e s m -> q -> Capconf i c -> Capconf i c
+makeCleanup t q cf = ccrtCleanup t q cf
 
 transactT :: CCRT' q i c e s m -> s -> m e
 transactT t s = (ccrtTrans $ ccrtT t) s
