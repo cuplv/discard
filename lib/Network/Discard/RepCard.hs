@@ -50,6 +50,7 @@ data Manager q h i c e s = Manager
   , manOthers :: [i]
   , manJobQueue :: TQueue (Job q i c e s)
   , manWaitingRoom :: [Job q i c e s]
+  , manWRCaps :: Capconf i c
   , manLatest :: TVar (s, Store q h i c e)
   , grantMultiplex :: Int
   , batched :: Int
@@ -130,7 +131,7 @@ defaultDManagerSettings'
   -> DManagerSettings q h i c e s
 defaultDManagerSettings' q cf s = DManagerSettings
   { timeoutUnitSize = 100000
-  , setBatchSize = 1
+  , setBatchSize = 0
   , onUpdate = const $ return ()
   , onValUpdate = const $ return ()
   , onLockUpdate = const $ return ()
@@ -194,6 +195,7 @@ initManager i os ds r val0 store0 (DManagerSettings ts bsize upCb upCbVal upCbLo
         os
         jobQueue
         []
+        mempty
         latestState
         0
         0
@@ -244,15 +246,23 @@ managerLoop = do
   handleWaiting
 
   -- Run the application-specific request-handling function on the
-  -- request state.
-  dbg 1 "Loop Phase: handleRequests"
-  handleRequests
+  -- request state.  We only do this when the max transaction batch is
+  -- reached.
+  batchIsMax >>= \case
+    True -> do dbg 1 "Loop Phase: handleRequests"
+               handleRequests
 
   -- And loop
   managerLoop
 
 data ManEvent q h i c e s = ManNew (Either (BMsg (Store q h i c e)) 
                                            (Job q i c e s)) 
+
+batchIsMax :: (ManC r q h i c e s) => ManM r q h i c e s k Bool
+batchIsMax = do
+  b <- batched <$> get
+  bm <- batchMax <$> get
+  return $ b >= bm
 
 handleLatest :: (ManC r q h i c e s) => ManM r q h i c e s k ()
 handleLatest = do
@@ -268,8 +278,8 @@ handleLatest = do
       dbg 1 "Received broadcast."
       -- If the received broadcast contains new updates, rebroadcast it.
       lift (incorp s) >>= \case
-        Just _ -> lift bcast >> dbg 1 "Rebroadcast."
-        Nothing -> return ()
+        -- Just _ -> lift bcast >> dbg 1 "Rebroadcast."
+        _  -> return ()
       liftIO (onGetBroadcastCb man)
     ManNew (Left Hello) ->
       -- -- Respond to a 'Hello' by broadcasting the current state,
@@ -280,13 +290,17 @@ handleLatest = do
 handleWaiting :: (ManC r q h i c e s) => ManM r q h i c e s k ()
 handleWaiting = do
   i <- manId <$> get
+  cfP <- manWRCaps <$> get
   cf <- lift.use $ store.caps
-  wr <- manWaitingRoom <$> get
-  let tryT ts t = tryTransact t >>= \case
-        Nothing -> return ts
-        Just _ -> return $ ts ++ [t]
-  wr' <- foldM tryT [] wr
-  modify (\m -> m { manWaitingRoom = wr' })
+  if cf /= cfP
+     then do
+       wr <- manWaitingRoom <$> get
+       let tryT ts t = tryTransact t >>= \case
+             Nothing -> return ts
+             Just _ -> return $ ts ++ [t]
+       wr' <- foldM tryT [] wr
+       modify (\m -> m { manWaitingRoom = wr' })
+     else return ()
 
 handleRequests :: (ManC r q h i c e s) => ManM r q h i c e s k ()
 handleRequests = do
@@ -309,7 +323,11 @@ manGetLatest :: (ManC r q h i c e s) => ManM r q h i c e s k s
 manGetLatest = (^.stateVal) <$> (lstm . readTVar =<< manLatest <$> get)
 
 putOnHold :: (ManC r q h i c e s) => Job q i c e s -> ManM r q h i c e s k ()
-putOnHold t = modify (\m -> m { manWaitingRoom = manWaitingRoom m ++ [t] })
+putOnHold t = do
+  cf <- lift.use $ store.caps
+  modify (\m -> m { manWaitingRoom = manWaitingRoom m ++ [t]
+                  , manWRCaps = cf
+                  })
 
 -- | Broadcast current state and reset batch size.
 bcast' :: (ManC r q h i c e s) => ManM r q h i c e s k ()
@@ -327,8 +345,8 @@ issueEffect e = do
   lift $ histAppend i e
   bmax <- batchMax <$> get
   b' <- (+ 1) . batched <$> get
-  qEmpty <- lstm . isEmptyTQueue =<< manJobQueue <$> get
-  if b' > bmax || qEmpty
+  -- qEmpty <- lstm . isEmptyTQueue =<< manJobQueue <$> get
+  if b' > bmax
      then bcast'
      else modify $ \m -> m { batched = b' }
 
