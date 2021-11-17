@@ -4,21 +4,21 @@
 module Network.Discard.Experiment
   ( defaultServerPort
   , defaultBatchSize
-  , ExpConf (..)
-  , divRate
+  -- , ExpConf (..)
+  -- , divRate
   , ExpNetConf (..)
   , getNetConf
   , expAddrs
-  , Mix (..)
+  -- , Mix (..)
   , Profile
-  , chooseOp
-  , ExpResult (..)
-  , totalLats
-  , emptyResults
-  , combineResults
-  , totalReqs
-  , trueReqRate
-  , combinedAvgLatency
+  -- , chooseOp
+  -- , ExpResult (..)
+  -- , totalLats
+  -- , emptyResults
+  -- , combineResults
+  -- , totalReqs
+  -- , trueReqRate
+  -- , combinedAvgLatency
 
   ) where
 
@@ -29,90 +29,90 @@ import qualified Data.Map as Map
 import Control.Monad (foldM)
 import Data.Time.Clock
 
-import Lang.Carol
+import Lang.CCRT
 import Network.Discard.Broadcast
 
--- expTime is a number of seconds
-data ExpConf = ExpConf 
-  { expRate :: Int
-  , expApp :: String
-  , expMix :: Mix
-  , expTime :: Int
-  , expBatchSize :: Int
-  , expUseTokens :: Bool }
-  deriving (Eq,Ord,Show,Generic)
+-- -- expTime is a number of seconds
+-- data ExpConf = ExpConf 
+--   { expRate :: Int
+--   , expApp :: String
+--   , expMix :: Mix
+--   , expTime :: Int
+--   , expBatchSize :: Int
+--   , expUseTokens :: Bool }
+--   deriving (Eq,Ord,Show,Generic)
 
-instance ToJSON ExpConf where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON ExpConf
+-- instance ToJSON ExpConf where
+--   toEncoding = genericToEncoding defaultOptions
+-- instance FromJSON ExpConf
 
--- | Divide request rate by number of hosts, so that all hosts
--- together will perform the original rate
-divRate :: ExpNetConf i -> ExpConf -> ExpConf
-divRate (ExpNetConf nc) (ExpConf r a m t b tk) = 
-  ExpConf (r `div` Map.size nc) a m t b tk
+-- -- | Divide request rate by number of hosts, so that all hosts
+-- -- together will perform the original rate
+-- divRate :: ExpNetConf i -> ExpConf -> ExpConf
+-- divRate (ExpNetConf nc) (ExpConf r a m t b tk) = 
+--   ExpConf (r `div` Map.size nc) a m t b tk
 
-data Mix = Mix [(Int,String)] String deriving (Eq,Ord,Show,Generic)
+-- data Mix = Mix [(Int,String)] String deriving (Eq,Ord,Show,Generic)
 
-instance ToJSON Mix where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON Mix
+-- instance ToJSON Mix where
+--   toEncoding = genericToEncoding defaultOptions
+-- instance FromJSON Mix
 
-type Profile c e s = String -> Carol c e s ()
+type Profile q i c e s = String -> CCRT' q i c e s IO
 
-chooseOp :: Profile c e s -> Mix -> Int -> (String, Carol c e s ())
-chooseOp prf (Mix ns df) n = 
-  let opStr = foldr (\(n',s') s -> if n <= n'
-                                      then s'
-                                      else s) df ns
-  in (opStr, prf opStr)
+-- chooseOp :: Profile c e s -> Mix -> Int -> (String, Carol c e s ())
+-- chooseOp prf (Mix ns df) n = 
+--   let opStr = foldr (\(n',s') s -> if n <= n'
+--                                       then s'
+--                                       else s) df ns
+--   in (opStr, prf opStr)
 
-data ExpResult = ExpResult 
-  { expAvgLatencies :: Map String NominalDiffTime
-  , expReqCounts :: Map String Int
-  , expUnfinished :: Map String Int
-  } deriving (Show,Generic)
+-- data ExpResult = ExpResult 
+--   { expAvgLatencies :: Map String NominalDiffTime
+--   , expReqCounts :: Map String Int
+--   , expUnfinished :: Map String Int
+--   } deriving (Show,Generic)
 
-instance ToJSON ExpResult where
-  toEncoding = genericToEncoding defaultOptions
-instance FromJSON ExpResult
+-- instance ToJSON ExpResult where
+--   toEncoding = genericToEncoding defaultOptions
+-- instance FromJSON ExpResult
 
--- | Map of 'String's to the total latency time spent on their kind of
--- request
-totalLats :: ExpResult -> Map String NominalDiffTime
-totalLats (ExpResult lats cs _) = 
-  Map.mapWithKey (\s l -> l * fromIntegral (cs Map.! s)) lats
+-- -- | Map of 'String's to the total latency time spent on their kind of
+-- -- request
+-- totalLats :: ExpResult -> Map String NominalDiffTime
+-- totalLats (ExpResult lats cs _) = 
+--   Map.mapWithKey (\s l -> l * fromIntegral (cs Map.! s)) lats
 
--- | Total latency time spent across all requests
-combinedLats :: ExpResult -> NominalDiffTime
-combinedLats = foldr (+) 0 . totalLats
+-- -- | Total latency time spent across all requests
+-- combinedLats :: ExpResult -> NominalDiffTime
+-- combinedLats = foldr (+) 0 . totalLats
 
-emptyResults :: ExpResult
-emptyResults = ExpResult Map.empty Map.empty Map.empty
+-- emptyResults :: ExpResult
+-- emptyResults = ExpResult Map.empty Map.empty Map.empty
 
-combineResults :: ExpResult -> ExpResult -> ExpResult
-combineResults e1@(ExpResult lats1 cs1 unf1) e2@(ExpResult lats2 cs2 unf2) = 
-  let cs = Map.unionWith (+) cs1 cs2
-      tots = Map.unionWith (+) (totalLats e1) (totalLats e2)
-      lats = Map.mapWithKey (\s l -> l / fromIntegral (cs Map.! s)) tots
-      unf = Map.unionWith (+) unf1 unf2
-  in ExpResult lats cs unf
+-- combineResults :: ExpResult -> ExpResult -> ExpResult
+-- combineResults e1@(ExpResult lats1 cs1 unf1) e2@(ExpResult lats2 cs2 unf2) = 
+--   let cs = Map.unionWith (+) cs1 cs2
+--       tots = Map.unionWith (+) (totalLats e1) (totalLats e2)
+--       lats = Map.mapWithKey (\s l -> l / fromIntegral (cs Map.! s)) tots
+--       unf = Map.unionWith (+) unf1 unf2
+--   in ExpResult lats cs unf
 
-totalReqs :: ExpResult -> Int
-totalReqs = foldr (+) 0 . expReqCounts
+-- totalReqs :: ExpResult -> Int
+-- totalReqs = foldr (+) 0 . expReqCounts
 
-combinedAvgLatency :: ExpResult -> NominalDiffTime
-combinedAvgLatency e = combinedLats e / (fromRational . fromIntegral $ totalReqs e)
+-- combinedAvgLatency :: ExpResult -> NominalDiffTime
+-- combinedAvgLatency e = combinedLats e / (fromRational . fromIntegral $ totalReqs e)
 
-trueReqRate :: ExpConf
-            -> ExpResult 
-            -> Int
-trueReqRate conf res = totalReqs res `div` expTime conf
+-- trueReqRate :: ExpConf
+--             -> ExpResult 
+--             -> Int
+-- trueReqRate conf res = totalReqs res `div` expTime conf
 
-instance Semigroup ExpResult where
-  (<>) = combineResults
-instance Monoid ExpResult where
-  mempty = emptyResults
+-- instance Semigroup ExpResult where
+--   (<>) = combineResults
+-- instance Monoid ExpResult where
+--   mempty = emptyResults
 
 data ExpNetConf i = ExpNetConf (Map i (String, Int, Int)) deriving (Show,Eq,Ord)
 

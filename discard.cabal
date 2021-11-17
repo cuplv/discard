@@ -27,9 +27,10 @@ library
                      , Data.LamportClock
                      , Lang.CCRT
                      , Lang.CCRT.Token
+                     , Lang.CCRT.Escrow
                      , Network.Discard
-                     -- , Network.Discard.Experiment
-                     -- , Network.Discard.Experiment2
+                     , Network.Discard.Experiment
+                     , Network.Discard.Experiment2
                      , Storage.Ipfs.Types
                      , Storage.Ipfs.Turtle
                      , Storage.Ipfs.Http
@@ -93,6 +94,7 @@ executable discard-demo
 
 executable discard-experiment-server
   main-is:             Server.hs
+  other-modules:       Warehouse
   build-depends:       base >=4.10 && <4.15
                      , discard
                      , mtl
