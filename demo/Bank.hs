@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Bank where
 
 import Data.CARD.Capconf
@@ -57,3 +59,17 @@ initCapconf i is =
 
 initTokens :: i -> TokenMap i (CounterC Int)
 initTokens i = initTokenMap [(i,lowerBound)]
+
+psBankOp :: (Ord i, Monad m) => (i,i) -> i -> BankOp m -> BankOp' i m
+psBankOp (pi,si) i o | i == pi = (tokenT i o) { ccrtCleanup = f }
+  where f e (q,cf) | isAddE e = (q,fromJust $ transferG i (si,undo e) cf)
+                   | otherwise = (q,cf)
+psBankOp (pi,si) i o | i == si = (tokenT i o) { ccrtCleanup = f }
+  where f e (q,cf) | isSubE e = (q,fromJust $ transferG i (pi,undo e) cf)
+                   | otherwise = (q,cf)
+
+psInitTokens :: i -> TokenMap i (CounterC Int)
+psInitTokens i = initTokenMap []
+
+psInitCapconf :: (Ord i) => i -> [i] -> Capconf i (CounterC Int)
+psInitCapconf i is = mkUniform lowerBound [i] <> mkUniform idC is

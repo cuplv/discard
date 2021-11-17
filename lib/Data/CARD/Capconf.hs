@@ -48,9 +48,12 @@ data Hist i c
   = Hist { histInit :: c
          , histSummed :: Int
          , histChanges :: [Change i c]
-         , histInbox :: c
+         , histInbox :: Map i (Int,[c])
          }
   deriving (Eq,Ord,Generic)
+
+inboxCap :: (Monoid c) => Map i (Int,[c]) -> c
+inboxCap = Map.foldr (\(_,l) c -> foldr (<>) c l) idC
 
 instance (Show i, Show c, Meet c, Monoid c) => Show (Hist i c) where
   show (Hist i n c b) =
@@ -58,26 +61,34 @@ instance (Show i, Show c, Meet c, Monoid c) => Show (Hist i c) where
     ++ (case c of
           [] -> ""
           cs -> ", " ++ show cs)
-    ++ (if b <=? idC
+    ++ (if bc <=? idC
            then ""
-           else ", " ++ show b)
+           else ", " ++ show bc)
     ++ ")"
+    where bc = inboxCap b
 
-instance (ToJSON i, ToJSON c) => ToJSON (Hist i c)
-instance (FromJSON i, FromJSON c) => FromJSON (Hist i c)
+instance (Ord i, ToJSON i, ToJSONKey i, ToJSON c) => ToJSON (Hist i c)
+instance (Ord i, FromJSON i, FromJSONKey i, FromJSON c) => FromJSON (Hist i c)
 
 takeLonger l1 l2 | length l1 > length l2 = l1
                  | otherwise = l2
 
-mergeH :: (Semigroup c) => Hist i c -> Hist i c -> Hist i c
+mergeInbox :: (Int,[a]) -> (Int,[a]) -> (Int,[a])
+mergeInbox (n1,l1) (n2,l2) | n1 < n2 =
+  mergeInbox (n2, (drop (n2 - n1) l1)) (n2,l2)
+mergeInbox (n1,l1) (n2,l2) | n1 > n2 =
+  mergeInbox (n1,l1) (n1, (drop (n1 - n2) l2))
+mergeInbox (n1,l1) (_,l2) = (n1,takeLonger l1 l2)
+
+mergeH :: (Ord i, Semigroup c) => Hist i c -> Hist i c -> Hist i c
 mergeH (Hist c1 n1 ms1 a1) h2@(Hist c2 n2 ms2 a2) | n1 < n2 =
   mergeH (Hist c2 n2 (drop (n2 - n1) ms1) a1) h2
 mergeH h1@(Hist c1 n1 ms1 a1) (Hist c2 n2 ms2 a2) | n1 > n2 =
   mergeH h1 (Hist c1 n1 (drop (n1 - n2) ms2) a2)
 mergeH (Hist c1 n1 ms1 a1) (Hist _ _ ms2 a2) =
-  Hist c1 n1 (takeLonger ms1 ms2) (a1 <> a2)
+  Hist c1 n1 (takeLonger ms1 ms2) (Map.unionWith mergeInbox a1 a2)
 
-initHist :: (Monoid c) => c -> Hist i c
+initHist :: (Ord i, Monoid c) => c -> Hist i c
 initHist c = Hist c 0 [] mempty
 
 -- | Add a new capability change to history.  If this is an invalid
@@ -94,12 +105,17 @@ newChange m h = case summarizeH h of
 
 -- | Accept transferred caps from inbox (if any).
 acceptH :: (Meet c, Monoid c, Split c) => Hist i c -> Hist i c
-acceptH h@(Hist _ _ _ a) = case newChange (Gain a) h of
-  Hist c n ms _ -> Hist c n ms mempty
+acceptH h@(Hist _ _ _ a) = 
+  let ca = inboxCap a
+      a' = Map.map (\(n,l) -> (n + length l, [])) a
+  in case newChange (Gain ca) h of
+       Hist c n ms _ -> Hist c n ms a'
 
--- | Add caps to inbox.
-depositH :: (Semigroup c) => c -> Hist i c -> Hist i c
-depositH c1 (Hist c n ms a) = Hist c n ms (a <> c1)
+-- | Add caps to inbox.  This should be performed by the @i@ replica.
+depositH :: (Ord i, Semigroup c) => i -> c -> Hist i c -> Hist i c
+depositH i c1 (Hist c n ms a) = Hist c n ms (Map.alter f i a)
+  where f Nothing = Just (0,[c1])
+        f (Just (n,l)) = Just (n,l ++ [c1])
 
 -- | Remove masks held by the @i@ replica.
 unmaskMine :: (Eq i) => i -> Hist i c -> Hist i c
@@ -137,16 +153,17 @@ summarizeH (Hist c n (m:ms) a) =
 
 -- | Compute capability from history.
 getCap :: (Meet c, Monoid c, Split c) => Hist i c -> Maybe c
-getCap (Hist c _ ms a) = (<> a) <$> foldM change c ms
+getCap (Hist c _ ms a) = (<> ca) <$> foldM change c ms
+  where ca = inboxCap a
 
 data Capconf i c
   = Capconf { capConf :: Map i (Hist i c) }
   deriving (Eq,Ord,Generic)
 
-instance (Show i, Show c, Meet c, Monoid c) => Show (Capconf i c) where
+instance (Ord i, Show i, Show c, Meet c, Monoid c) => Show (Capconf i c) where
   show (Capconf m) = show (Map.toList m)
 
-instance (ToJSON i, ToJSONKey i, ToJSON c) => ToJSON (Capconf i c)
+instance (Ord i, ToJSON i, ToJSONKey i, ToJSON c) => ToJSON (Capconf i c)
 instance (Ord i, FromJSON i, FromJSONKey i, FromJSON c) => FromJSON (Capconf i c)
 
 instance
@@ -197,14 +214,14 @@ dropG i c (Capconf m) =
      then Just (Capconf (Map.adjust (newChange (Drop c)) i m))
      else Nothing
 
-depositG :: (Ord i, Meet c, Monoid c, Split c) => (i,c) -> Capconf i c -> Capconf i c
-depositG (i2,c) (Capconf m) = Capconf $ Map.adjust (depositH c) i2 m
+depositG :: (Ord i, Meet c, Monoid c, Split c) => i -> (i,c) -> Capconf i c -> Capconf i c
+depositG i (i2,c) (Capconf m) = Capconf $ Map.adjust (depositH i c) i2 m
 
 -- | @transferG i1 (i2,c) g@ transfers the capability @c@ from replica
 -- @i1@ to replica @i2@.  This should be applied locally to the
 -- configuration at @i1@ and then lazily propogated to @i2@.
 transferG :: (Ord i, Meet c, Monoid c, Split c) => i -> (i,c) -> Capconf i c -> Maybe (Capconf i c)
-transferG i1 (i2,c) g = depositG (i2,c) <$> dropG i1 c g
+transferG i1 (i2,c) g = depositG i1 (i2,c) <$> dropG i1 c g
 
 acceptG :: (Ord i, Meet c, Monoid c, Split c) => i -> Capconf i c -> Capconf i c
 acceptG i (Capconf m) = Capconf $ Map.adjust acceptH i m

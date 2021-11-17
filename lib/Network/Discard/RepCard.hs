@@ -266,6 +266,7 @@ batchIsMax = do
 
 handleLatest :: (ManC r q h i c e s) => ManM r q h i c e s k ()
 handleLatest = do
+  i <- manId <$> get
   man <- get
   let updates = ManNew <$> readTQueue (manInbox man)
   lstm updates >>= \case
@@ -280,6 +281,8 @@ handleLatest = do
       lift (incorp s) >>= \case
         -- Just _ -> lift bcast >> dbg 1 "Rebroadcast."
         _  -> return ()
+      -- Accept any transferred caps.
+      lift (incorpOn' caps $ return . acceptG i)
       liftIO (onGetBroadcastCb man)
     ManNew (Left Hello) ->
       -- -- Respond to a 'Hello' by broadcasting the current state,

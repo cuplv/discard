@@ -67,37 +67,35 @@ draw i (ns,(q,c,r),f) =
           <> ") -- " <> show r
         rqs = Brick.str $ "Rqs: " <> show q
 
-prettyRes :: [CounterE Int] -> String
-prettyRes (ModifyE e : es) = "+/- " ++ show (addAmt e) ++ " " ++ prettyRes es
--- prettyRes ((Effect [Sub n]) :es) = "-" ++ show n ++ " " ++ prettyRes es
-prettyRes (e:es) = show e ++ " " ++ prettyRes es
-prettyRes [] = ""
-
 thd (_,_,a) = a
 
-app :: String
+app :: Bool -- finite mode
+    -> (String,String)
+    -> String
     -> (BankOp' String IO -> IO ())
     -> App (St CustomEvent) CustomEvent Name
-app i cc = App 
+app fm (pi,si) i cc = App 
   { appDraw = draw i
   , appHandleEvent = \(ns,(q,c,r),f) ev -> case ev of
       VtyEvent (V.EvResize {}) -> continue (ns,(q,c,r),f)
       VtyEvent (V.EvKey V.KEsc []) -> halt (ns,(q,c,r),f)
       VtyEvent (V.EvKey V.KEnter []) -> suspendAndResume $ do
+        let bop | fm = psBankOp (pi,si)
+                | otherwise = bankOp
         case Text.words ((formState f) ^.cfCommand) of
           ["dp",v] -> do 
-            cc.bankOp i $ depositT (read . Text.unpack $ v)
+            cc.bop i $ depositT (read . Text.unpack $ v)
             return (ns,(q,c,r),mkForm $ CommandForm "")
           ["dpr",v] -> do
-            rslt <- runTR cc (bankOp i) $ depositTR (read . Text.unpack $ v)
+            rslt <- runTR cc (bop i) $ depositTR (read . Text.unpack $ v)
             case rslt of
               Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
               Left e -> error $ "dp failed: " ++ show e ++ ", " ++ show (localG i r)
           ["wd",v] -> do
-            cc.bankOp i $ withdrawT (read . Text.unpack $ v)
+            cc.bop i $ withdrawT (read . Text.unpack $ v)
             return (ns,(q,c,r),mkForm $ CommandForm "")
           ["wdr",v] -> do
-            rslt <- runTR cc (bankOp i) $ withdrawTR (read . Text.unpack $ v)
+            rslt <- runTR cc (bop i) $ withdrawTR (read . Text.unpack $ v)
             case rslt of
               Right _ -> return (ns,(q,c,r),mkForm $ CommandForm "")
               Left e -> error $ "wd failed: " ++ show e ++ ", " ++ show (localG i r)
@@ -124,17 +122,19 @@ mkUpdateChan = do
   return (chan, writeBChan chan . StoreUpdate, writeBChan chan GotMessage)
 
 runUi
-  :: String
+  :: Bool -- finite mode
+  -> (String,String)
+  -> String
   -> Int
   -> (BankOp' String IO -> IO ())
   -> BChan CustomEvent
   -> IO ()
-runUi nodeId s0 conn chan = do
+runUi fm (pi,si) nodeId s0 conn chan = do
   let buildVty = do
         v <- V.mkVty =<< V.standardIOConfig
         V.setMode (V.outputIface v) V.Mouse True
         return v
       f = (Offline, (mempty,s0,mempty), mkForm (CommandForm ""))
   vty0 <- buildVty
-  f' <- customMain vty0 buildVty (Just chan) (app nodeId conn) f
+  f' <- customMain vty0 buildVty (Just chan) (app fm (pi,si) nodeId conn) f
   return ()

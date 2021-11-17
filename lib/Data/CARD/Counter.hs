@@ -10,8 +10,8 @@ module Data.CARD.Counter
   , addE
   , subE
   , mulE
-  , addAmt
-  , mulAmt
+  , isAddE
+  , isSubE
   , CounterC
   , addC
   , subC
@@ -112,6 +112,14 @@ mulE :: (Ord n, Num n) => n -> CounterE n
 mulE n | n >= 0 = ModifyE (AddMul n addId)
        | otherwise = error $ "Negative value applied to mulE."
 
+isAddE :: (Ord n, Num n) => CounterE n -> Bool
+isAddE (ModifyE (AddMul m a)) = m == mulId && a > addId
+isAddE _ = False
+
+isSubE :: (Ord n, Num n) => CounterE n -> Bool
+isSubE (ModifyE (AddMul m a)) = m == mulId && a < addId
+isSubE _ = False
+
 {-| Check that an 'EAddMul' effect only adds/subtracts, and does not
     multiply.
 
@@ -125,6 +133,7 @@ mulE n | n >= 0 = ModifyE (AddMul n addId)
 -}
 additive :: (Eq n, Num n) => AddMul n -> Bool
 additive (AddMul m _) = m == mulId
+
 
 -- Nothing for each field means unlimited use, while Just
 -- <addId|mulId> means no use.

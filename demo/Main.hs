@@ -40,7 +40,9 @@ data ConfCLI = ConfCLI
   , nodeName :: String
   , ipfsPort :: Int
   , pFile :: Maybe FilePath
-  , isOneshot :: Bool }
+  , isOneshot :: Bool
+  , finiteMode :: Bool
+  }
 
 localAddr :: ConfCLI -> String
 localAddr c = "http://localhost:" <> show (ipfsPort c)
@@ -59,6 +61,7 @@ confCLI = execParser $
         <*> option auto (long "ipfs-port" <> value 5001)
         <*> optionm str (short 'f' <> metavar "FILE" <> help "Persistent storage file")
         <*> switch (long "oneshot" <> help "Deposit 10 and exit, instead of interactive session")
+        <*> switch (long "finite" <> help "Use finite caps.")
       misc = (fullDesc
               <> progDesc "Run a bank account CARD node"
               <> header "discard-demo - a demo application for the Carol language")
@@ -98,31 +101,32 @@ node = do
                    await >>= \case
                      False -> putStrLn "Network timeout. Continuing in offline mode..."
                      _ -> return ()
-                   -- s0 <- carol man (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
                    s0 <- fromRight <$> runTR' balanceT
                    putStrLn $ "Starting balance: $" <> show s0 <> "."
-                   -- d <- carol man $ deposit 10
                    d <- runTR' $ depositTR 10
                    case d of
                      Right n -> putStrLn $ "Deposited $" <> show n <> "."
                      Left e -> putStrLn (show e)
-                   -- s1 <- carol man $ (query uniC :: Carol (CounterC Int) (CounterE Int) Int Int)
                    s1 <- fromRight <$> runTR' balanceT
                    putStrLn $ "Ending balance: $" <> show s1 <> "."
              runNode' settings script
 
      else do (eventChan, onUpdate, onMessage) <- mkUpdateChan
              let onUpdate' (v,s) = onUpdate (getRqs s,v,getCaps s)
+                 primary = head $ listIds net
+                 others = tail $ listIds net
                  script i man = do
                    let runner = runCCRT man
                    initStore <- fromRight
                                 <$> runTR runner (tokenT i) balanceT
-                   runUi (nodeName conf) initStore (runCCRT man) eventChan
-                 primary = head $ listIds net
-                 others = tail $ listIds net
-                 q0 = initTokens primary
+                   runUi (finiteMode conf) (primary,head others) (nodeName conf) initStore (runCCRT man) eventChan                 
+                 q0 = if finiteMode conf
+                         then psInitTokens primary
+                         else initTokens primary
                  cf0 = if nodeName conf == primary
-                          then initCapconf primary others
+                          then if finiteMode conf
+                                  then psInitCapconf primary others
+                                  else initCapconf primary others
                           else mempty
 
                  settings = (defaultDManagerSettings' q0 cf0 0)
