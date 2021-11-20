@@ -251,6 +251,7 @@ managerLoop = do
   batchIsMax >>= \case
     True -> do dbg 1 "Loop Phase: handleRequests"
                handleRequests
+    False -> return ()
 
   -- And loop
   managerLoop
