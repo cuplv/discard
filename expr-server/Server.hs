@@ -94,14 +94,26 @@ startExp i ipfsAddr tsize tks lastv resultsv (ec,nc) = do
     Just last -> (Map.lookup last <$> readTVarIO resultsv) >>= \case
       Nothing -> return Nothing
       Just _ -> return (Just (last + 1))
-  let q0 = if e2Primary ec == i
-              then tmTokens (e2Primary ec)
-              else mempty
-      cf0 = if e2Primary ec == i
-               then tmCapconf (e2Primary ec) (e2Others ec)
-               else mempty
+  let 
+      -- q0 = if e2Primary ec == i
+      --         then tmTokens (e2Primary ec)
+      --         else mempty
+      q0 | e2Primary ec == i && e2UseReservations ec = prInitTokens 
+                                                         (e2Primary ec)
+         | e2Primary ec == i = tmTokens (e2Primary ec)
+         | otherwise = mempty
+      cf0 | e2Primary ec == i && e2UseReservations ec = prInitCapconf 
+                                                          (e2Primary ec)
+                                                          (e2Others ec)
+          | e2Primary ec == i = tmCapconf (e2Primary ec) (e2Others ec)
+          | otherwise = mempty
+      -- cf0 = if e2Primary ec == i
+      --          then tmCapconf (e2Primary ec) (e2Others ec)
+      --          else mempty
       rh = tmHandler i
-      settings = (defaultDManagerSettings' q0 cf0 0)
+      v0 | e2UseReservations ec = 0
+         | otherwise = e2WarehouseSize ec
+      settings = (defaultDManagerSettings' q0 cf0 v0)
                    { timeoutUnitSize = tsize
                    , setBatchSize = getBatchSize ec
                    , dmsReqHandler = rh
@@ -173,12 +185,15 @@ exp2Script econf i man = do
       --      then (sellR, whenBelow (e2WarehouseSize econf `div` 2)
       --                             (restockQR (e2WarehouseSize econf)))
       --      else (sellQ, whenBelow (e2WarehouseSize econf `div` 2)
-      --                             (restockQQ (e2WarehouseSize econf)))
+      --                             (restockQQ (e2WarehouseSize econf))))
+      prim = e2Primary econf
+      others = e2Others econf
       (sell,restock) =
         if e2UseReservations econf
-           then (tmOp i (sellT 1 sales)
+           then (prOp prim others i (sellT 1 sales)
+                ,prOp prim others i (restockT (e2WarehouseSize econf)))
+           else (tmOp i (sellT 1 sales)
                 ,tmOp i (restockT (e2WarehouseSize econf)))
-           else undefined
       rc (n:ns) = do
         runCCRT man sell
         -- carolAsync man sell (\b -> if b

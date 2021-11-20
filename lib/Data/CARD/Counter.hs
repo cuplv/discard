@@ -22,6 +22,7 @@ module Data.CARD.Counter
   , AddMul
   , lowerBound'
   , upperBound'
+  , divup
   ) where
 
 import Data.Aeson
@@ -278,3 +279,9 @@ lowerBound = modifyC $ lowerBound'
 
 upperBound :: (Num n) => CounterC n
 upperBound = modifyC $ upperBound'
+
+divup :: [String] -> CounterE Int -> [(String,CounterE Int)]
+divup ss (ModifyE (AddMul m a)) | m == mulId =
+  let l = length ss
+      n = quot a l
+  in map (\s -> (s, addE n)) ss

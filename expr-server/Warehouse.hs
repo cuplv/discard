@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+
 module Warehouse where
 
 import Data.CARD.Capconf
@@ -44,3 +46,18 @@ tmCapconf i is =
 
 tmTokens :: String -> TokenMap String (CounterC Int)
 tmTokens i = initTokenMap [(i,lowerBound), (i,upperBound)]
+
+prOp :: (Monad m) => String -> [String] -> String -> Op m -> Op' m
+prOp prim sec i o | i == prim = (tokenT i o) { ccrtCleanup = f }
+  where f e (q,cf) | isAddE e = let fl (s,e) cf = fromJust $ transferG i (s,undo e) cf
+                                in (q, foldr fl cf (divup sec e))
+                   | otherwise = (q,cf)
+prOp prim sec i o = (tokenT i o) { ccrtCleanup = f }
+  where f e (q,cf) | isSubE e = (q,fromJust $ transferG i (prim,undo e) cf)
+                   | otherwise = (q,cf)
+
+prInitTokens :: String -> TokenMap i (CounterC Int)
+prInitTokens i = initTokenMap []
+
+prInitCapconf :: (Ord i) => i -> [i] -> Capconf i (CounterC Int)
+prInitCapconf i is = mkUniform lowerBound [i] <> mkUniform idC is
