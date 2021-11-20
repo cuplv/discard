@@ -41,11 +41,12 @@ tmHandler = tokenReqHandler
 
 tmCapconf :: String -> [String] -> Capconf String (CounterC Int)
 tmCapconf i is =
-  foldr (\i' -> maskG i' (i,lowerBound) . maskG i' (i,upperBound))
-        (mkUniform uniC (i:is)) is
+  -- foldr (\i' -> maskG i' (i,lowerBound) . maskG i' (i,upperBound))
+  --       (mkUniform uniC (i:is)) is
+  mkUniform uniC [i] <> mkUniform idC is
 
 tmTokens :: String -> TokenMap String (CounterC Int)
-tmTokens i = initTokenMap [(i,lowerBound), (i,upperBound)]
+tmTokens i = initTokenMap [(i,(lowerBound,upperBound)), (i,(upperBound,lowerBound))]
 
 prOp :: (Monad m) => String -> [String] -> String -> Op m -> Op' m
 prOp prim sec i o | i == prim = (tokenT i o) { ccrtCleanup = f }
