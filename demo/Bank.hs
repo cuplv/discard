@@ -54,11 +54,12 @@ bankOp i o = (tokenT i o) { ccrtCleanup = f }
 
 initCapconf :: (Ord i) => i -> [i] -> Capconf i (CounterC Int)
 initCapconf i is = 
-  foldr (\i' -> maskG i' (i,lowerBound)) (mkUniform uniC (i:is)) is
+  -- foldr (\i' -> maskG i' (i,lowerBound)) (mkUniform uniC (i:is)) is
+  mkUniform uniC [i] <> mkUniform lowerBound is
   -- mkUniform uniC (i:is)
 
 initTokens :: i -> TokenMap i (CounterC Int)
-initTokens i = initTokenMap [(i,lowerBound)]
+initTokens i = initTokenMap [(i,(lowerBound,upperBound))]
 
 psBankOp :: (Ord i, Monad m) => (i,i) -> i -> BankOp m -> BankOp' i m
 psBankOp (pi,si) i o | i == pi = (tokenT i o) { ccrtCleanup = f }

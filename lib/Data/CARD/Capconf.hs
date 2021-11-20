@@ -10,11 +10,14 @@ module Data.CARD.Capconf
   , remoteG'
   , consumeG
   , dropG
+  , mdropG
   , transferG
   , acceptG
   , maskG
   , unmaskAllG
   , unmaskAllG'
+  , unmaskAllG''
+  , changeMaskAllG
   , mkUniform
   ) where
 
@@ -31,6 +34,7 @@ import GHC.Generics
 data Change i c
   = Gain c
   | Drop c
+  | MDrop c
   | Mask i c
   | Unmasked
   deriving (Show,Eq,Ord,Generic)
@@ -41,6 +45,7 @@ instance (FromJSON i, FromJSON c) => FromJSON (Change i c)
 change :: (Meet c, Monoid c, Split c) => c -> Change i c -> Maybe c
 change a (Gain b) = Just (a <> b)
 change a (Drop b) = split a b
+change a (MDrop b) = Just (a `meet` b)
 change a (Mask _ b) = Just (a `meet` b)
 change a Unmasked = Just a
 
@@ -133,6 +138,13 @@ unmaskMine' i cu (Hist c n ms a) =
              m -> m
   in Hist c n (map f ms) a
 
+changeMine' :: (Eq i, Eq c) => i -> c -> i -> Hist i c -> Hist i c
+changeMine' i cu i2 (Hist c n ms a) =
+  let f = \case
+             Mask j c | j == i && c == cu -> Mask i2 c
+             m -> m
+  in Hist c n (map f ms) a
+
 -- | Remove masks held by replicas other than the @i@ argument.
 unmaskOthers :: (Eq i) => i -> Hist i c -> Hist i c
 unmaskOthers i (Hist c n ms a) =
@@ -214,6 +226,13 @@ dropG i c (Capconf m) =
      then Just (Capconf (Map.adjust (newChange (Drop c)) i m))
      else Nothing
 
+mdropG :: (Ord i, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Capconf i c
+mdropG _ c cf | c <=? idC = cf
+mdropG i c (Capconf m) = Capconf (Map.adjust (newChange (MDrop c)) i m)
+  -- if c <=? localG i (Capconf m)
+  --    then Just ()
+  --    else Nothing
+
 depositG :: (Ord i, Meet c, Monoid c, Split c) => i -> (i,c) -> Capconf i c -> Capconf i c
 depositG i (i2,c) (Capconf m) = Capconf $ Map.adjust (depositH i c) i2 m
 
@@ -247,6 +266,15 @@ unmaskAllG i (Capconf m) = Capconf $ Map.map (unmaskMine i) m
 
 unmaskAllG' :: (Ord i, Eq c, Meet c, Monoid c, Split c) => i -> c -> Capconf i c -> Capconf i c
 unmaskAllG' i c (Capconf m) = Capconf $ Map.map (unmaskMine' i c) m
+
+unmaskAllG'' :: (Ord i, Eq c, Meet c, Monoid c, Split c) => i -> (i,c) -> Capconf i c -> Capconf i c
+unmaskAllG'' i (i1,c) (Capconf m) = Capconf $ Map.adjust (unmaskMine' i c) i1 m
+
+changeMaskAllG :: (Ord i, Eq c, Meet c, Monoid c, Split c) => i -> (i,c) -> Capconf i c -> Capconf i c
+changeMaskAllG i (i1,c) (Capconf m) = 
+  Capconf $ Map.mapWithKey (\k -> if k == i1
+                                     then unmaskMine' i c
+                                     else changeMine' i c i1) m
 
 mkUniform :: (Ord i, Monoid c) => c -> [i] -> Capconf i c
 mkUniform c is =

@@ -5,3 +5,7 @@
 - name: beta
   port: 23002
   expPort: 24002
+
+- name: gamma
+  port: 23003
+  expPort: 24003

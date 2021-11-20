@@ -54,7 +54,7 @@ requestToken i t@(Token n o rs) | i == o = t
                                 | otherwise = Token n o (Set.insert i rs)
 
 data TokenMap i c
-  = TokenMap { tokens :: Map c (Token i) }
+  = TokenMap { tokens :: Map (c,c) (Token i) }
   deriving (Show,Eq,Ord,Generic)
 
 instance (Ord i, Ord c, ToJSON i, ToJSON c, ToJSONKey c) => ToJSON (TokenMap i c)
@@ -82,7 +82,8 @@ tokenReqHandler i (TokenMap m, cf) =
                   | otherwise = (Map.insert c t m,l)
       (m',l') = Map.foldrWithKey f (Map.empty,[]) m
 
-      f2 (c,i') = maskG i (i',c) . unmaskAllG' i c
+      -- f2 (c,i') = maskG i (i',c) . changeMaskAllG i (i',c)
+      f2 ((c1,c2),i') = mdropG i c1 . fromJust . transferG i (i',c2)
   in (TokenMap m', foldr f2 cf l')
 
 tokenRequester
@@ -92,7 +93,7 @@ tokenRequester
   -> TokenMap i c
   -> Maybe (TokenMap i c)
 tokenRequester i cr (TokenMap m) =
-  case List.find (\c' -> cr <=? c') (Map.keys m) of
+  case List.find (\(c',_) -> cr <=? c') (Map.keys m) of
     Just c' -> case Map.lookup c' m of
       Just t -> Just . TokenMap $ (Map.insert c' (requestToken i t) m)
       Nothing -> Nothing
@@ -106,6 +107,6 @@ tokenT i t =
        (const id)
        t
 
-initTokenMap :: (Ord c) => [(i,c)] -> TokenMap i c
+initTokenMap :: (Ord c) => [(i,(c,c))] -> TokenMap i c
 initTokenMap is = TokenMap $
   foldr (\(i,c) m -> Map.insert c (initToken i) m) Map.empty is
